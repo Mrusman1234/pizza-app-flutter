@@ -35,6 +35,8 @@ import '../screens/settings_screen.dart';
 import '../screens/forgot_password_screen.dart';
 import '../screens/rider_dashboard_screen.dart';
 import '../screens/restaurant_management_screen.dart';
+import '../screens/payment_screen.dart';
+import '../screens/order_success_screen.dart';
 import '../models/restaurant_model.dart';
 import 'route_names.dart';
 
@@ -110,5 +112,18 @@ class AppRoutes {
 
     // ✅ Rider routes
     RouteNames.riderDashboard: (_) => const RiderDashboardScreen(),
+
+    // ✅ Payment routes
+    RouteNames.payment: (context) {
+      final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+      return PaymentScreen(
+        amount: args['amount'],
+        orderId: args['orderId'],
+      );
+    },
+    RouteNames.orderSuccess: (context) {
+      final txnRef = ModalRoute.of(context)!.settings.arguments as String?;
+      return OrderSuccessScreen(txnRef: txnRef);
+    },
   };
 }

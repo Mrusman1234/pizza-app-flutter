@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:provider/provider.dart';
 import 'l10n/app_localizations.dart';
 
@@ -43,6 +44,13 @@ void main() async {
   
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  // Activate Firebase App Check
+  await FirebaseAppCheck.instance.activate(
+    androidProvider: AndroidProvider.debug,
+    appleProvider: AppleProvider.debug,
+    webProvider: ReCaptchaV3Provider('YOUR_RECAPTCHA_SITE_KEY'), // paste site key here
   );
 
   // Register background message handler

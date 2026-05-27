@@ -78,12 +78,23 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       await cartProvider.clearCart();
 
       if (mounted) {
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          RouteNames.orderTracking,
-          (route) => false,
-          arguments: orderId,
-        );
+        if (_paymentMethod == 'JazzCash / EasyPaisa') {
+          Navigator.pushReplacementNamed(
+            context,
+            RouteNames.payment,
+            arguments: {
+              'amount': cartProvider.total,
+              'orderId': orderId,
+            },
+          );
+        } else {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            RouteNames.orderTracking,
+            (route) => false,
+            arguments: orderId,
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -120,6 +131,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             _buildSectionTitle('Payment Method'),
             const SizedBox(height: 12),
             _buildPaymentOption('Cash on Delivery', Icons.money),
+            _buildPaymentOption('JazzCash / EasyPaisa', Icons.account_balance_wallet),
             _buildPaymentOption('Credit/Debit Card', Icons.credit_card, enabled: false),
             const SizedBox(height: 32),
             _buildSectionTitle('Order Summary'),
