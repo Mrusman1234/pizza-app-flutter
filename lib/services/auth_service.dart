@@ -38,6 +38,11 @@ class AuthService extends ChangeNotifier {
         await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
           'name': name,
           'email': email,
+          'role': 'customer',           // ← ADD THIS
+          'phone': '',                  // ← ADD THIS
+          'photoUrl': '',               // ← ADD THIS
+          'fcmToken': '',               // ← ADD THIS
+          'isActive': true,             // ← ADD THIS
           'createdAt': FieldValue.serverTimestamp(),
           'orders': 0,
           'reviews': 0,

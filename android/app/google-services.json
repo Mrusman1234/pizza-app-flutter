@@ -1,0 +1,90 @@
+{
+  "project_info": {
+    "project_number": "817904341442",
+    "project_id": "pizza-hub-vehari",
+    "storage_bucket": "pizza-hub-vehari.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:817904341442:android:364ae532e54b97e4ee065b",
+        "android_client_info": {
+          "package_name": "pk.vehari.app_multi_restaurant"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "817904341442-aa9udk5b6h4bhrpnpjphoj403m1pg6k1.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDecEs4ql9moIyK9JoLAXsmnCJUAOEhdCA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "817904341442-aa9udk5b6h4bhrpnpjphoj403m1pg6k1.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "817904341442-ip7u4kb6qiq5mrs2un7mroeot23vo0g8.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "pk.vehari.pizzahub"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:817904341442:android:cccb8fe1e348b7feee065b",
+        "android_client_info": {
+          "package_name": "pk.vehari.pizzahub"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "817904341442-uaejh9qt5q8avms0h39kev7j4dguf9s4.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "pk.vehari.pizzahub",
+            "certificate_hash": "2c03171de08e5a60ea6b96bfd4b85b395d348f2d"
+          }
+        },
+        {
+          "client_id": "817904341442-aa9udk5b6h4bhrpnpjphoj403m1pg6k1.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDecEs4ql9moIyK9JoLAXsmnCJUAOEhdCA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "817904341442-aa9udk5b6h4bhrpnpjphoj403m1pg6k1.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "817904341442-ip7u4kb6qiq5mrs2un7mroeot23vo0g8.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "pk.vehari.pizzahub"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
