@@ -1,0 +1,91 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // Rules for the users collection
+    match /users/{userId} {
+      allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow write: if isSignedIn() && (isOwner(userId) || isAdmin());
+
+      // Cart subcollection
+      match /cart/{cartId} {
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+      }
+
+      // Addresses subcollection
+      match /addresses/{addressId} {
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+      }
+    }
+
+    // Rules for the restaurants collection
+    match /restaurants/{restaurantId} {
+      allow read: if true; // Publicly readable for customers
+      allow create: if isAdmin();
+      allow update, delete: if isAdmin() &&
+        (resource.data.adminId == request.auth.uid || !('adminId' in resource.data));
+
+      // Menu items subcollection
+      match /menu/{menuId} {
+        allow read: if true;
+        allow write: if isAdmin() &&
+          get(/databases/$(database)/documents/restaurants/$(restaurantId)).data.adminId == request.auth.uid;
+      }
+    }
+
+    // Rules for the orders collection
+    match /orders/{orderId} {
+      allow read: if isSignedIn() && (
+        request.auth.uid == resource.data.userId ||
+        request.auth.uid == resource.data.adminId ||
+        isAdmin()
+      );
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        request.auth.uid == resource.data.userId ||
+        request.auth.uid == resource.data.adminId ||
+        isAdmin()
+      );
+    }
+
+    // Rules for deals
+    match /deals/{dealId} {
+      allow read: if true;
+      allow write: if isAdmin() &&
+        (resource == null || resource.data.adminId == request.auth.uid);
+    }
+
+    // Rules for promotions
+    match /promotions/{promotionId} {
+      allow read: if true;
+      allow write: if isAdmin() &&
+        (resource == null || resource.data.adminId == request.auth.uid);
+    }
+
+    // Rules for notifications
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() &&
+        (request.auth.uid == resource.data.userId || request.auth.uid == resource.data.adminId);
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin() && resource.data.adminId == request.auth.uid;
+    }
+
+    // Commissions collection
+    match /commissions/{commId} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

@@ -1,0 +1,36 @@
+class RouteNames {
+  static const String splash = '/';
+  static const String login = '/login';
+  static const String signup = '/signup';
+  static const String home = '/home';
+  static const String cart = '/cart';
+  static const String profile = '/profile';
+  static const String restaurantDetail = '/restaurant-detail';
+  static const String pizzaDetail = '/pizza-detail';
+  static const String checkout = '/checkout';
+  static const String myOrders = '/my-orders';
+  static const String orderTracking = '/order-tracking';
+  static const String addressManagement = '/address-management';
+  static const String addAddress = '/add-address';
+  static const String notifications = '/notifications';
+  static const String restaurants = '/restaurants';
+  static const String orderDetails = '/order-details';
+  static const String adminOrders = '/admin-orders';
+  static const String adminDashboard = '/admin-dashboard';
+  static const String adminCustomers = '/admin-customers';
+  static const String adminStores = '/admin-stores';
+  static const String adminRiders = '/admin-riders';
+  static const String adminPromotions = '/admin-promotions';
+  static const String adminNotifications = '/admin-notifications';
+  static const String adminCommissions = '/admin-commissions';
+  static const String adminAnalytics = '/admin-analytics';
+  static const String adminPerformance = '/admin-performance';
+  static const String adminRestaurantReport = '/admin-restaurant-report';
+  static const String adminSettings = '/admin-settings';
+  static const String adminLogin = '/admin-login';
+  static const String forgotPassword = '/forgot-password';
+  static const String settings = '/settings';
+  static const String editProfile = '/edit-profile';
+  static const String helpCenter = '/help-center';
+  static const String riderDashboard = '/rider-dashboard';
+}
