@@ -121,7 +121,7 @@ class _AddressManagementScreenState extends State<AddressManagementScreen> {
         border: Border.all(color: isDefault ? AppColors.primary : AppColors.border, width: isDefault ? 1.5 : 1),
       ),
       child: InkWell(
-        onTap: () => Navigator.pop(context, addr['address']),
+        onTap: () => Navigator.pop(context, addr),
         borderRadius: BorderRadius.circular(20),
         child: Padding(
           padding: const EdgeInsets.all(16),

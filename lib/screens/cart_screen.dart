@@ -4,6 +4,7 @@ import '../../core/constants/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/cart_provider.dart';
 import '../../routes/route_names.dart';
+import '../../services/firestore_service.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -13,9 +14,64 @@ class CartScreen extends StatefulWidget {
 }
 
 class _CartScreenState extends State<CartScreen> {
-  String _selectedAddress = "Vehari City Center, Punjab";
+  String _selectedAddress = "Loading address...";
+  String _selectedAddressType = "Home";
+  Map<String, dynamic>? _selectedAddressData;
   final TextEditingController _promoController = TextEditingController();
   bool _isApplyingPromo = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDefaultAddress();
+  }
+
+  Future<void> _loadDefaultAddress() async {
+    final authProvider = Provider.of<AppAuthProvider>(context, listen: false);
+    final user = authProvider.user;
+    if (user == null) {
+      setState(() => _selectedAddress = 'Please login');
+      return;
+    }
+    final address = await FirestoreService().getDefaultAddress(user.uid);
+    if (mounted) {
+      setState(() {
+        if (address != null) {
+          _selectedAddress = address['address'] ?? 'No address found';
+          _selectedAddressType = address['type'] ?? 'Home';
+          _selectedAddressData = address;
+        } else {
+          _selectedAddress = 'No address — tap Change to add';
+        }
+      });
+    }
+  }
+
+  Future<void> _openAddressSelection() async {
+    final result = await Navigator.pushNamed(
+      context,
+      RouteNames.addressManagement,
+    );
+    
+    if (result != null) {
+      if (result is Map<String, dynamic>) {
+        setState(() {
+          _selectedAddress = result['address'] ?? _selectedAddress;
+          _selectedAddressType = result['type'] ?? 'Home';
+          _selectedAddressData = result;
+        });
+      } else if (result is String) {
+        // Fallback if address management only returns the string
+         setState(() {
+          _selectedAddress = result;
+        });
+        // Try to reload to get full data if possible
+        _loadDefaultAddress();
+      }
+    } else {
+       _loadDefaultAddress();
+    }
+  }
 
   @override
   void dispose() {
@@ -182,7 +238,15 @@ class _CartScreenState extends State<CartScreen> {
                             Container(
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(color: AppColors.card2, borderRadius: BorderRadius.circular(12)),
-                              child: const Icon(Icons.location_on_outlined, color: AppColors.primary, size: 20),
+                              child: Icon(
+                                _selectedAddressType == 'Work' || _selectedAddressType == 'Office'
+                                    ? Icons.work_outline
+                                    : _selectedAddressType == 'Other'
+                                        ? Icons.location_on_outlined
+                                        : Icons.home_outlined,
+                                color: AppColors.primary,
+                                size: 20,
+                              ),
                             ),
                             const SizedBox(width: 16),
                             Expanded(
@@ -198,7 +262,7 @@ class _CartScreenState extends State<CartScreen> {
                               ),
                             ),
                             TextButton(
-                              onPressed: () {}, // TODO: Address selection
+                              onPressed: _openAddressSelection,
                               child: const Text("Change", style: TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.bold)),
                             ),
                           ],
@@ -363,6 +427,7 @@ class _CartScreenState extends State<CartScreen> {
                   'totalAmount': totalAmount,
                   'promoDiscount': discount,
                   'promoCode': cartProvider.appliedPromo?['code'],
+                  'addressData': _selectedAddressData,
                 },
               );
             },
