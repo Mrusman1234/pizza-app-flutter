@@ -562,6 +562,39 @@ class FirestoreService {
     await _db.collection(FirestoreConstants.restaurants).doc(restaurantId).delete();
   }
 
+  Future<Map<String, dynamic>?> validatePromoCode(String code) async {
+    try {
+      final query = await _db
+          .collection(FirestoreConstants.promotions)
+          .where(FirestoreConstants.code, isEqualTo: code.toUpperCase().trim())
+          .where(FirestoreConstants.status, isEqualTo: 'Active')
+          .limit(1)
+          .get();
+
+      if (query.docs.isEmpty) return null;
+
+      final promo = query.docs.first.data();
+      promo[FirestoreConstants.id] = query.docs.first.id;
+      return promo;
+    } catch (e) {
+      debugPrint("Error validating promo code: $e");
+      return null;
+    }
+  }
+
+  Future<void> incrementPromoRedemption(String promoId) async {
+    try {
+      await _db
+          .collection(FirestoreConstants.promotions)
+          .doc(promoId)
+          .update({
+        FirestoreConstants.redemptions: FieldValue.increment(1),
+      });
+    } catch (e) {
+      debugPrint("Error incrementing promo redemption: $e");
+    }
+  }
+
   Future<void> addMenuItem(String restaurantId, Map<String, dynamic> itemData) async {
     await _db
         .collection(FirestoreConstants.restaurants)
@@ -703,6 +736,8 @@ class FirestoreService {
     required double deliveryFee,
     required double tax,
     required double totalAmount,
+    double? discountAmount,
+    String? promoCode,
     required String address,
     double? lat,
     double? lng,
@@ -739,6 +774,8 @@ class FirestoreService {
         FirestoreConstants.deliveryFee: deliveryFee,
         FirestoreConstants.tax: tax,
         FirestoreConstants.totalAmount: totalAmount,
+        FirestoreConstants.discountAmount: discountAmount,
+        FirestoreConstants.promoCode: promoCode,
         FirestoreConstants.commissionRate: commissionRate,
         FirestoreConstants.commissionAmount: commissionAmount,
         FirestoreConstants.address: address,
@@ -831,14 +868,25 @@ class FirestoreService {
 
       final Map<String, dynamic> updates = {FirestoreConstants.status: status};
       
+      String notificationTitle = 'Order Status Updated';
+      String notificationBody = 'Your order from $restaurantName is now: $status';
+
       if (status == FirestoreConstants.statusPreparing) {
         updates[FirestoreConstants.preparingAt] = FieldValue.serverTimestamp();
+        notificationTitle = 'Order Preparing';
+        notificationBody = 'The kitchen has started preparing your delicious pizza!';
       } else if (status == FirestoreConstants.statusOnTheWay) {
         updates[FirestoreConstants.onTheWayAt] = FieldValue.serverTimestamp();
+        notificationTitle = 'Order on the Way';
+        notificationBody = 'Your rider is heading to your location. Get ready!';
       } else if (status == FirestoreConstants.statusDelivered) {
         updates[FirestoreConstants.deliveredAt] = FieldValue.serverTimestamp();
+        notificationTitle = 'Order Delivered';
+        notificationBody = 'Enjoy your meal! Don\'t forget to rate us.';
       } else if (status == FirestoreConstants.statusCancelled) {
         updates[FirestoreConstants.cancelledAt] = FieldValue.serverTimestamp();
+        notificationTitle = 'Order Cancelled';
+        notificationBody = 'Your order from $restaurantName has been cancelled.';
       }
 
       await _db.collection(FirestoreConstants.orders).doc(orderId).update(updates);
@@ -847,8 +895,8 @@ class FirestoreService {
       if (userId != null) {
         await _db.collection(FirestoreConstants.notifications).add({
           FirestoreConstants.userId: userId,
-          FirestoreConstants.title: 'Order Status Updated',
-          FirestoreConstants.body: 'Your order from $restaurantName is now: $status',
+          FirestoreConstants.title: notificationTitle,
+          FirestoreConstants.body: notificationBody,
           FirestoreConstants.type: 'order_status',
           'orderId': orderId,
           FirestoreConstants.createdAt: FieldValue.serverTimestamp(),

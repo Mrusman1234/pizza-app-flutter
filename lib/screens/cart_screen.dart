@@ -14,6 +14,14 @@ class CartScreen extends StatefulWidget {
 
 class _CartScreenState extends State<CartScreen> {
   String _selectedAddress = "Vehari City Center, Punjab";
+  final TextEditingController _promoController = TextEditingController();
+  bool _isApplyingPromo = false;
+
+  @override
+  void dispose() {
+    _promoController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,10 +29,11 @@ class _CartScreenState extends State<CartScreen> {
     final authProvider = Provider.of<AppAuthProvider>(context, listen: false);
     final userId = authProvider.user?.uid;
     final cartItems = cartProvider.items;
-    final double subtotal = cartProvider.totalAmount;
+    final double subtotal = cartProvider.subtotal;
+    final double discount = cartProvider.discountAmount;
     const double deliveryFee = 50.0;
     const double tax = 100.0;
-    final double totalAmount = cartItems.isEmpty ? 0 : subtotal + deliveryFee + tax;
+    final double totalAmount = cartItems.isEmpty ? 0 : (subtotal - discount) + deliveryFee + tax;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -218,25 +227,73 @@ class _CartScreenState extends State<CartScreen> {
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(color: AppColors.border),
                         ),
-                        child: Row(
+                        child: Column(
                           children: [
-                            const Icon(Icons.confirmation_number_outlined, color: AppColors.primary, size: 20),
-                            const SizedBox(width: 12),
-                            const Expanded(
-                              child: TextField(
-                                style: TextStyle(color: AppColors.text, fontSize: 14),
-                                decoration: InputDecoration(
-                                  hintText: "Enter promo code",
-                                  hintStyle: TextStyle(color: AppColors.muted, fontSize: 14),
-                                  border: InputBorder.none,
-                                  isDense: true,
+                            Row(
+                              children: [
+                                const Icon(Icons.confirmation_number_outlined, color: AppColors.primary, size: 20),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: TextField(
+                                    controller: _promoController,
+                                    enabled: cartProvider.appliedPromo == null,
+                                    style: const TextStyle(color: AppColors.text, fontSize: 14),
+                                    decoration: const InputDecoration(
+                                      hintText: "Enter promo code",
+                                      hintStyle: TextStyle(color: AppColors.muted, fontSize: 14),
+                                      border: InputBorder.none,
+                                      isDense: true,
+                                    ),
+                                  ),
+                                ),
+                                if (cartProvider.appliedPromo != null)
+                                  IconButton(
+                                    icon: const Icon(Icons.cancel, color: AppColors.muted, size: 20),
+                                    onPressed: () {
+                                      cartProvider.removePromoCode();
+                                      _promoController.clear();
+                                    },
+                                  )
+                                else
+                                  _isApplyingPromo 
+                                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary))
+                                    : TextButton(
+                                        onPressed: () async {
+                                          if (_promoController.text.isEmpty) return;
+                                          setState(() => _isApplyingPromo = true);
+                                          final error = await cartProvider.applyPromoCode(_promoController.text);
+                                          setState(() => _isApplyingPromo = false);
+                                          
+                                          if (mounted) {
+                                            if (error != null) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(content: Text(error), backgroundColor: Colors.red),
+                                              );
+                                            } else {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                const SnackBar(content: Text("Promo code applied successfully!"), backgroundColor: AppColors.green),
+                                              );
+                                            }
+                                          }
+                                        },
+                                        child: const Text("Apply", style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
+                                      ),
+                              ],
+                            ),
+                            if (cartProvider.appliedPromo != null)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.check_circle, color: AppColors.green, size: 14),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Code "${cartProvider.appliedPromo!['code']}" applied! -Rs ${discount.toInt()}',
+                                      style: const TextStyle(color: AppColors.green, fontSize: 12),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ),
-                            TextButton(
-                              onPressed: () {},
-                              child: const Text("Apply", style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
-                            ),
                           ],
                         ),
                       ),
@@ -253,6 +310,14 @@ class _CartScreenState extends State<CartScreen> {
                         child: Column(
                           children: [
                             _summaryRow("Subtotal", "Rs. ${subtotal.toInt()}"),
+                            if (discount > 0) ...[
+                              const SizedBox(height: 12),
+                              _summaryRow(
+                                "Discount ${cartProvider.appliedPromo != null ? '(${cartProvider.appliedPromo!['discountType'] == 'percentage' ? '${cartProvider.appliedPromo!['discountValue'] ?? cartProvider.appliedPromo!['discountPercent']}%' : 'Flat Rs. ${cartProvider.appliedPromo!['discountValue']}'})' : ''}", 
+                                "- Rs. ${discount.toInt()}", 
+                                valueColor: AppColors.green
+                              ),
+                            ],
                             const SizedBox(height: 12),
                             _summaryRow("Delivery Fee", "Rs. ${deliveryFee.toInt()}", valueColor: AppColors.green),
                             const SizedBox(height: 12),
@@ -296,6 +361,8 @@ class _CartScreenState extends State<CartScreen> {
                   'deliveryFee': deliveryFee,
                   'tax': tax,
                   'totalAmount': totalAmount,
+                  'promoDiscount': discount,
+                  'promoCode': cartProvider.appliedPromo?['code'],
                 },
               );
             },

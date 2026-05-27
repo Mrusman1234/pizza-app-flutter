@@ -31,6 +31,8 @@ class FirestoreConstants {
   static const String deliveryFee = 'deliveryFee';
   static const String tax = 'tax';
   static const String totalAmount = 'totalAmount';
+  static const String discountAmount = 'discountAmount';
+  static const String promoCode = 'promoCode';
   static const String address = 'address';
   static const String paymentMethod = 'paymentMethod';
   static const String restaurantId = 'restaurantId';
@@ -72,6 +74,8 @@ class FirestoreConstants {
 
   // Promotion Fields
   static const String code = 'code';
+  static const String discountType = 'discountType';
+  static const String discountValue = 'discountValue';
   static const String redemptions = 'redemptions';
   static const String revenueGenerated = 'revenueGenerated';
   static const String newCustomers = 'newCustomers';

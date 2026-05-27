@@ -57,8 +57,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     setState(() => _isPlacingOrder = true);
 
     try {
-      final restaurantId = cartProvider.items.first.restaurantId;
-      final restaurantName = cartProvider.items.first.restaurantName;
+      final restaurantId = cartProvider.restaurantId;
+      final restaurantName = cartProvider.restaurantName;
+      final promo = cartProvider.appliedPromo;
 
       final orderId = await _firestoreService.placeOrder(
         userId: user.uid,
@@ -67,6 +68,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         deliveryFee: cartProvider.deliveryFee,
         tax: cartProvider.tax,
         totalAmount: cartProvider.total,
+        discountAmount: cartProvider.discountAmount,
+        promoCode: promo?['code'],
         address: _selectedAddress!['address'],
         lat: _selectedAddress!['lat'],
         lng: _selectedAddress!['lng'],
@@ -75,6 +78,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         restaurantName: restaurantName,
       );
 
+      // If promo used, increment redemptions
+      if (promo != null && promo['id'] != null) {
+        await _firestoreService.incrementPromoRedemption(promo['id']);
+      }
+
+      final double totalBeforeClear = cartProvider.total;
       await cartProvider.clearCart();
 
       if (mounted) {
@@ -83,7 +92,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             context,
             RouteNames.payment,
             arguments: {
-              'amount': cartProvider.total,
+              'amount': totalBeforeClear,
               'orderId': orderId,
             },
           );
@@ -137,6 +146,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             _buildSectionTitle('Order Summary'),
             const SizedBox(height: 12),
             _buildSummaryRow('Subtotal', cartProvider.subtotal),
+            if (cartProvider.discountAmount > 0)
+              _buildSummaryRow(
+                'Discount ${cartProvider.appliedPromo != null ? "(${cartProvider.appliedPromo!['code']})" : ""}', 
+                cartProvider.discountAmount, 
+                isDiscount: true
+              ),
             _buildSummaryRow('Delivery Fee', cartProvider.deliveryFee),
             _buildSummaryRow('Tax', cartProvider.tax),
             const Divider(color: AppColors.border, height: 32),
@@ -241,7 +256,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
-  Widget _buildSummaryRow(String label, double amount, {bool isTotal = false}) {
+  Widget _buildSummaryRow(String label, double amount, {bool isTotal = false, bool isDiscount = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -256,9 +271,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
           ),
           Text(
-            'Rs ${amount.toStringAsFixed(0)}',
+            '${isDiscount ? "- " : ""}Rs ${amount.toStringAsFixed(0)}',
             style: TextStyle(
-              color: isTotal ? AppColors.primary : Colors.white,
+              color: isDiscount ? AppColors.green : (isTotal ? AppColors.primary : Colors.white),
               fontSize: isTotal ? 20 : 16,
               fontWeight: FontWeight.bold,
             ),

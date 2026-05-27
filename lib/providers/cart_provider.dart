@@ -1,36 +1,81 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../core/constants/firestore_constants.dart';
 import '../models/cart_model.dart';
 import '../models/pizza_model.dart';
+import '../services/firestore_service.dart';
 
 class CartProvider with ChangeNotifier {
   final List<CartItemModel> _items = [];
+  final FirestoreService _firestoreService = FirestoreService();
+
+  Map<String, dynamic>? _appliedPromo;
+  double _discountAmount = 0.0;
 
   List<CartItemModel> get items => [..._items];
+  Map<String, dynamic>? get appliedPromo => _appliedPromo;
+  double get discountAmount => _discountAmount;
 
   /// Returns the restaurant ID if all items belong to the same restaurant.
   /// Returns null if the cart contains items from multiple restaurants or is empty.
   String? get restaurantId {
     if (_items.isEmpty) return null;
-    final firstId = _items.first.pizza.restaurantId;
-    return _items.every((item) => item.pizza.restaurantId == firstId) ? firstId : null;
+    return _items.first.pizza.restaurantId;
   }
 
-  /// Returns the restaurant name if all items belong to the same restaurant.
-  /// Returns "Multi-restaurant Order" if items from multiple restaurants are present.
   String? get restaurantName {
     if (_items.isEmpty) return null;
-    final firstName = _items.first.pizza.restaurantName;
-    if (_items.every((item) => item.pizza.restaurantName == firstName)) {
-      return firstName;
-    }
-    return "Multi-restaurant Order";
+    return _items.first.pizza.restaurantName ?? "Restaurant";
   }
 
   int get itemCount => _items.length;
 
   double get totalAmount {
+    double subtotal = _items.fold(0.0, (sum, item) => sum + (item.itemPrice * item.quantity));
+    return subtotal - _discountAmount;
+  }
+
+  double get subtotal {
     return _items.fold(0.0, (sum, item) => sum + (item.itemPrice * item.quantity));
+  }
+
+  double get deliveryFee => _items.isEmpty ? 0.0 : 50.0;
+  double get tax => _items.isEmpty ? 0.0 : 100.0;
+
+  double get total {
+    if (_items.isEmpty) return 0.0;
+    return (subtotal - _discountAmount) + deliveryFee + tax;
+  }
+
+  Future<String?> applyPromoCode(String code) async {
+    if (_items.isEmpty) return "Add items to cart first";
+    
+    final promo = await _firestoreService.validatePromoCode(code);
+    if (promo == null) return "Invalid or expired promo code";
+
+    _appliedPromo = promo;
+    final type = promo[FirestoreConstants.discountType] ?? 'percentage';
+    final value = (promo[FirestoreConstants.discountValue] ?? promo['discountPercent'] ?? 0).toDouble();
+    
+    if (type == 'percentage') {
+      _discountAmount = subtotal * (value / 100);
+    } else {
+      _discountAmount = value;
+    }
+    
+    // Never exceed subtotal
+    if (_discountAmount > subtotal) {
+      _discountAmount = subtotal;
+    }
+
+    notifyListeners();
+    return null; // Success
+  }
+
+  void removePromoCode() {
+    _appliedPromo = null;
+    _discountAmount = 0.0;
+    notifyListeners();
   }
 
   void addToCart(PizzaModel pizza, {
@@ -116,6 +161,7 @@ class CartProvider with ChangeNotifier {
 
   void clearCart({String? userId}) {
     _items.clear();
+    removePromoCode();
     notifyListeners();
     if (userId != null) syncCartToFirestore(userId);
   }
