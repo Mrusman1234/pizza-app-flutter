@@ -46,10 +46,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
     if (!mounted) return;
     if (result['success'] == true) {
       // Navigate to order confirmation
-      // Using a placeholder route name since I don't know the exact one yet
-      // Typically it would be something like RouteNames.orderSuccess
-      Navigator.pushReplacementNamed(context, '/order-success',
-          arguments: result['txnRef']);
+      if (mounted) {
+        Navigator.pushReplacementNamed(
+          context,
+          RouteNames.orderSuccess,
+          arguments: result['txnRef'],
+        );
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Payment failed: ${result['message']}')),

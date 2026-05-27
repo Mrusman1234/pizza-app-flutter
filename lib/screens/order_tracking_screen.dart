@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/app_colors.dart';
 import '../../routes/route_names.dart';
 import '../../core/constants/firestore_constants.dart';
@@ -25,6 +26,42 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
   final Set<Polyline> _polylines = {};
   final String _googleApiKey = 'AIzaSyDecEs4ql9moIyK9JoLAXsmnCJUAOEhdCA'; // Using Android API Key from firebase_options
   LatLng? _lastRiderLatLng;
+
+  Future<void> _callRider(String phone) async {
+    // Clean the number — remove spaces, dashes, brackets
+    final cleaned = phone.replaceAll(RegExp(r'[\s\-\(\)]'), '');
+    final uri = Uri(scheme: 'tel', path: cleaned);
+
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not launch dialer for $phone')),
+        );
+      }
+    }
+  }
+
+  Future<void> _messageRider(String phone) async {
+    final cleaned = phone.replaceAll(RegExp(r'[\s\-\(\)]'), '');
+
+    // Try WhatsApp first (common in Pakistan)
+    final whatsappUri = Uri.parse('https://wa.me/92${cleaned.replaceFirst(RegExp(r'^0'), '')}');
+    final smsUri = Uri(scheme: 'sms', path: cleaned);
+
+    if (await canLaunchUrl(whatsappUri)) {
+      await launchUrl(whatsappUri, mode: LaunchMode.externalApplication);
+    } else if (await canLaunchUrl(smsUri)) {
+      await launchUrl(smsUri);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open WhatsApp or SMS')),
+        );
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -536,10 +573,11 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                                   child: CustomButton(
                                     text: "Call Rider",
                                     onPressed: () {
-                                      if (order.riderPhone != null) {
-                                        // Logic to launch dialer could go here if url_launcher was added
+                                      if (order.riderPhone != null && order.riderPhone!.isNotEmpty) {
+                                        _callRider(order.riderPhone!);
+                                      } else {
                                         ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(content: Text("Calling ${order.riderName}: ${order.riderPhone}")),
+                                          const SnackBar(content: Text('Rider phone number not available yet')),
                                         );
                                       }
                                     },
@@ -552,9 +590,11 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                                   child: CustomButton(
                                     text: "Message",
                                     onPressed: () {
-                                      if (order.riderId != null) {
+                                      if (order.riderPhone != null && order.riderPhone!.isNotEmpty) {
+                                        _messageRider(order.riderPhone!);
+                                      } else {
                                         ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text("Chat feature coming soon!")),
+                                          const SnackBar(content: Text('Rider contact not available yet')),
                                         );
                                       }
                                     },

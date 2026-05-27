@@ -226,11 +226,16 @@ class FirestoreService {
   Future<void> acceptOrder(String orderId, String riderId, String riderName) async {
     final batch = _db.batch();
 
+    // Get rider's phone first
+    final riderDoc = await _db.collection(FirestoreConstants.users).doc(riderId).get();
+    final riderPhone = riderDoc.data()?[FirestoreConstants.phone] ?? riderDoc.data()?[FirestoreConstants.phoneNumber] ?? '';
+
     // 1. Update Order
     final orderRef = _db.collection(FirestoreConstants.orders).doc(orderId);
     batch.update(orderRef, {
       FirestoreConstants.riderId: riderId,
       FirestoreConstants.riderName: riderName,
+      'riderPhone': riderPhone,
       FirestoreConstants.status: FirestoreConstants.statusOnTheWay,
       FirestoreConstants.onTheWayAt: FieldValue.serverTimestamp(),
     });
