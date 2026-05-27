@@ -25,6 +25,9 @@ import 'core/constants/app_strings.dart';
 import 'services/auth_service.dart';
 import 'services/notification_service.dart';
 
+/// Global key — allows navigation from anywhere (e.g. NotificationService)
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(
@@ -47,7 +50,7 @@ void main() async {
 
   // Initialize Notifications
   if (!kIsWeb) {
-    await NotificationService().init();
+    await NotificationService().init(navigatorKey: navigatorKey);
   }
 
   // Initialize Demo Data (Optional: Seed Firestore with restaurants and deals)
@@ -81,6 +84,7 @@ class MyApp extends StatelessWidget {
     final themeProvider = Provider.of<ThemeProvider>(context);
 
     return MaterialApp(
+      navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       title: AppStrings.appName,
       themeMode: themeProvider.isDark ? ThemeMode.dark : ThemeMode.light,

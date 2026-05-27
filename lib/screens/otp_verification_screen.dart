@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'dart:async';
+import '../services/auth_service.dart';
+import '../routes/route_names.dart';
 
 class OTPVerificationScreen extends StatefulWidget {
   final String phoneNumber;
@@ -318,12 +321,18 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                       width: double.infinity,
                       height: 56,
                       child: ElevatedButton(
-                        onPressed: () {
-                          // Verify OTP logic
+                        onPressed: () async {
                           final otp = _controllers.map((c) => c.text).join();
                           if (otp.length == 4) {
-                            // Proceed
-                            Navigator.pushReplacementNamed(context, '/home'); // Example navigation
+                            final authService = context.read<AuthService>();
+                            final success = await authService.verifyOTP(otp);
+                            if (success && mounted) {
+                              Navigator.pushReplacementNamed(context, RouteNames.home);
+                            } else if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Invalid OTP. Please try again.')),
+                              );
+                            }
                           }
                         },
                         style: ElevatedButton.styleFrom(
