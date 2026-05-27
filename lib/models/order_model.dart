@@ -11,6 +11,8 @@ class OrderModel {
   final String status; // 'pending', 'confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'
   final DateTime createdAt;
   final String deliveryAddress;
+  final double? deliveryLat;
+  final double? deliveryLng;
   final String paymentMethod;
   final String? riderId;
   final String? riderName;
@@ -28,6 +30,8 @@ class OrderModel {
     required this.status,
     required this.createdAt,
     required this.deliveryAddress,
+    this.deliveryLat,
+    this.deliveryLng,
     required this.paymentMethod,
     this.riderId,
     this.riderName,
@@ -47,6 +51,8 @@ class OrderModel {
       'status': status,
       'createdAt': createdAt.toIso8601String(),
       'deliveryAddress': deliveryAddress,
+      'deliveryLat': deliveryLat,
+      'deliveryLng': deliveryLng,
       'paymentMethod': paymentMethod,
       'riderId': riderId,
       'riderName': riderName,
@@ -86,6 +92,8 @@ class OrderModel {
       status: map['status'] ?? FirestoreConstants.statusPending,
       createdAt: parseDateTime(map['createdAt']),
       deliveryAddress: map['deliveryAddress'] ?? '',
+      deliveryLat: (map['deliveryLat'] as num?)?.toDouble(),
+      deliveryLng: (map['deliveryLng'] as num?)?.toDouble(),
       paymentMethod: map['paymentMethod'] ?? 'COD',
       riderId: map['riderId'],
       riderName: map['riderName'],

@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:http/http.dart' as http;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../core/constants/app_colors.dart';
 import '../../routes/route_names.dart';
@@ -20,6 +22,9 @@ class OrderTrackingScreen extends StatefulWidget {
 class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
   GoogleMapController? _mapController;
   final Set<Marker> _markers = {};
+  final Set<Polyline> _polylines = {};
+  final String _googleApiKey = 'AIzaSyDecEs4ql9moIyK9JoLAXsmnCJUAOEhdCA'; // Using Android API Key from firebase_options
+  LatLng? _lastRiderLatLng;
 
   @override
   void dispose() {
@@ -27,24 +32,104 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
     super.dispose();
   }
 
-  void _updateMarkers(GeoPoint? riderLoc) {
-    if (riderLoc == null) return;
+  void _updateMarkers(GeoPoint riderLoc, OrderModel order) async {
+    final riderLatLng = LatLng(riderLoc.latitude, riderLoc.longitude);
     
-    final marker = Marker(
+    // Check if rider moved significantly before fetching new polyline
+    bool shouldUpdatePolyline = _lastRiderLatLng == null;
+    if (_lastRiderLatLng != null) {
+      // Very simple distance check or just update every time for now
+      shouldUpdatePolyline = true; 
+    }
+    _lastRiderLatLng = riderLatLng;
+
+    final riderMarker = Marker(
       markerId: const MarkerId('rider'),
-      position: LatLng(riderLoc.latitude, riderLoc.longitude),
+      position: riderLatLng,
       icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
       infoWindow: const InfoWindow(title: 'Delivery Rider'),
     );
 
+    final destMarker = order.deliveryLat != null && order.deliveryLng != null
+        ? Marker(
+            markerId: const MarkerId('destination'),
+            position: LatLng(order.deliveryLat!, order.deliveryLng!),
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+            infoWindow: const InfoWindow(title: 'Delivery Location'),
+          )
+        : null;
+
     setState(() {
       _markers.clear();
-      _markers.add(marker);
+      _markers.add(riderMarker);
+      if (destMarker != null) _markers.add(destMarker);
     });
 
+    if (shouldUpdatePolyline && order.deliveryLat != null) {
+      _getRoutePolyline(riderLatLng, LatLng(order.deliveryLat!, order.deliveryLng!));
+    }
+
     _mapController?.animateCamera(
-      CameraUpdate.newLatLng(LatLng(riderLoc.latitude, riderLoc.longitude)),
+      CameraUpdate.newLatLng(riderLatLng),
     );
+  }
+
+  Future<void> _getRoutePolyline(LatLng start, LatLng end) async {
+    final url = Uri.parse(
+        'https://maps.googleapis.com/maps/api/directions/json?origin=${start.latitude},${start.longitude}&destination=${end.latitude},${end.longitude}&key=$_googleApiKey');
+
+    try {
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['status'] == 'OK') {
+          final points = data['routes'][0]['overview_polyline']['points'];
+          final decodedPoints = _decodePolyline(points);
+          
+          setState(() {
+            _polylines.clear();
+            _polylines.add(Polyline(
+              polylineId: const PolylineId('route'),
+              points: decodedPoints,
+              color: AppColors.primary,
+              width: 5,
+            ));
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fetching polyline: $e');
+    }
+  }
+
+  List<LatLng> _decodePolyline(String encoded) {
+    List<LatLng> points = [];
+    int index = 0, len = encoded.length;
+    int lat = 0, lng = 0;
+
+    while (index < len) {
+      int b, shift = 0, result = 0;
+      do {
+        b = encoded.codeUnitAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      int dlat = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+      lat += dlat;
+
+      shift = 0;
+      result = 0;
+      do {
+        b = encoded.codeUnitAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      int dlng = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+      lng += dlng;
+
+      points.add(LatLng(lat / 1E5, lng / 1E5));
+    }
+    return points;
   }
 
   @override
@@ -188,7 +273,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                               // Small delay to avoid setState during build
                               if (riderLoc != null) {
                                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                                  _updateMarkers(riderLoc);
+                                  _updateMarkers(riderLoc!, order);
                                 });
                               }
                             }
@@ -208,10 +293,11 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                                   initialCameraPosition: CameraPosition(
                                     target: riderLoc != null 
                                       ? LatLng(riderLoc.latitude, riderLoc.longitude)
-                                      : const LatLng(30.0444, 72.3444),
+                                      : (order.deliveryLat != null ? LatLng(order.deliveryLat!, order.deliveryLng!) : const LatLng(30.0444, 72.3444)),
                                     zoom: 15,
                                   ),
                                   markers: _markers,
+                                  polylines: _polylines,
                                   onMapCreated: (controller) => _mapController = controller,
                                   zoomControlsEnabled: false,
                                   mapToolbarEnabled: false,
