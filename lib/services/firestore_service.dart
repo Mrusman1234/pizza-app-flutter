@@ -908,6 +908,45 @@ class FirestoreService {
     }
   }
 
+  Future<void> submitOrderRating({
+    required String orderId,
+    required String restaurantId,
+    required String? riderId,
+    required double foodRating,
+    required double riderRating,
+    required String review,
+  }) async {
+    final batch = _db.batch();
+
+    // 1. Save rating on the order itself
+    final orderRef = _db.collection(FirestoreConstants.orders).doc(orderId);
+    batch.update(orderRef, {
+      FirestoreConstants.foodRating: foodRating,
+      FirestoreConstants.riderRating: riderRating,
+      FirestoreConstants.review: review,
+      FirestoreConstants.ratingSubmitted: true,
+      FirestoreConstants.ratedAt: FieldValue.serverTimestamp(),
+    });
+
+    // 2. Update restaurant's average rating
+    final restaurantRef = _db.collection(FirestoreConstants.restaurants).doc(restaurantId);
+    batch.update(restaurantRef, {
+      FirestoreConstants.totalRatingSum: FieldValue.increment(foodRating),
+      FirestoreConstants.totalRatingCount: FieldValue.increment(1),
+    });
+
+    // 3. Update rider's average rating (if assigned)
+    if (riderId != null) {
+      final riderRef = _db.collection(FirestoreConstants.users).doc(riderId);
+      batch.update(riderRef, {
+        FirestoreConstants.totalRatingSum: FieldValue.increment(riderRating),
+        FirestoreConstants.totalRatingCount: FieldValue.increment(1),
+      });
+    }
+
+    await batch.commit();
+  }
+
   Stream<Map<String, dynamic>?> getOrderById(String orderId) {
     return _db.collection(FirestoreConstants.orders).doc(orderId).snapshots().map((doc) {
       final data = doc.data();

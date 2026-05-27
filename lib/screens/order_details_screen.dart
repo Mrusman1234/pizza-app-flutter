@@ -145,6 +145,184 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
     }
   }
 
+  Future<void> _showRatingDialog({
+    required String orderId,
+    required String restaurantId,
+    required String? riderId,
+    required bool alreadyRated,
+  }) async {
+    if (alreadyRated) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You have already rated this order.')),
+      );
+      return;
+    }
+
+    double foodRating = 4.0;
+    double riderRating = 4.0;
+    final reviewController = TextEditingController();
+    bool isSubmitting = false;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Padding(
+          padding: EdgeInsets.only(
+            left: 24,
+            right: 24,
+            top: 24,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Handle bar
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text('Rate Your Order',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
+              const SizedBox(height: 6),
+              const Text('Your feedback helps us improve',
+                  style: TextStyle(color: AppColors.subtle, fontSize: 13)),
+              const SizedBox(height: 24),
+
+              // Food rating
+              const Text('Food Quality', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(5, (i) {
+                  return GestureDetector(
+                    onTap: () => setModalState(() => foodRating = i + 1.0),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Icon(
+                        i < foodRating ? Icons.star_rounded : Icons.star_outline_rounded,
+                        color: Colors.amber,
+                        size: 40,
+                      ),
+                    ),
+                  );
+                }),
+              ),
+              const SizedBox(height: 20),
+
+              // Rider rating
+              if (riderId != null) ...[
+                const Text('Delivery Rider', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(5, (i) {
+                    return GestureDetector(
+                      onTap: () => setModalState(() => riderRating = i + 1.0),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        child: Icon(
+                          i < riderRating ? Icons.star_rounded : Icons.star_outline_rounded,
+                          color: AppColors.primary,
+                          size: 40,
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+                const SizedBox(height: 20),
+              ],
+
+              // Review text
+              TextField(
+                controller: reviewController,
+                maxLines: 3,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: 'Write a review (optional)...',
+                  hintStyle: const TextStyle(color: AppColors.subtle),
+                  filled: true,
+                  fillColor: AppColors.background,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Submit button
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
+                          setModalState(() => isSubmitting = true);
+                          try {
+                            await _firestoreService.submitOrderRating(
+                              orderId: orderId,
+                              restaurantId: restaurantId,
+                              riderId: riderId,
+                              foodRating: foodRating,
+                              riderRating: riderRating,
+                              review: reviewController.text.trim(),
+                            );
+                            if (context.mounted) {
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Thank you for your feedback! ⭐'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            setModalState(() => isSubmitting = false);
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Error: $e')),
+                              );
+                            }
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: isSubmitting
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Text('Submit Rating', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showAssignRiderDialog(BuildContext context, String orderId) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     showDialog(
@@ -470,17 +648,25 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
                                   ] else ...[
                                     Expanded(
                                       child: OutlinedButton.icon(
-                                        onPressed: () {},
-                                        icon: const Icon(Icons.help_outline, size: 20),
-                                        label: const Text('Need Help?'),
+                                        onPressed: () => _showRatingDialog(
+                                          orderId: order[FirestoreConstants.id] ?? widget.orderId ?? '',
+                                          restaurantId: order[FirestoreConstants.restaurantId] ?? '',
+                                          riderId: order[FirestoreConstants.riderId],
+                                          alreadyRated: order[FirestoreConstants.ratingSubmitted] == true,
+                                        ),
+                                        icon: Icon(
+                                          order[FirestoreConstants.ratingSubmitted] == true
+                                              ? Icons.star_rounded
+                                              : Icons.star_outline_rounded,
+                                          size: 20,
+                                        ),
+                                        label: Text(order[FirestoreConstants.ratingSubmitted] == true ? 'Rated ✓' : 'Rate Order'),
                                         style: OutlinedButton.styleFrom(
-                                          foregroundColor: primary,
-                                          side: BorderSide(color: primary.withValues(alpha: 0.2)),
+                                          foregroundColor: Colors.amber,
+                                          side: BorderSide(color: Colors.amber.withValues(alpha: 0.3)),
                                           padding: const EdgeInsets.symmetric(vertical: 14),
-                                          shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(12)),
-                                          textStyle: const TextStyle(
-                                              fontWeight: FontWeight.bold),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                          textStyle: const TextStyle(fontWeight: FontWeight.bold),
                                         ),
                                       ),
                                     ),

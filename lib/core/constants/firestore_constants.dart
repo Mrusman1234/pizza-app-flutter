@@ -108,6 +108,15 @@ class FirestoreConstants {
   static const String totalCustomers = 'totalCustomers';
   static const String fcmToken = 'fcmToken';
 
+  // Rating Fields
+  static const String foodRating = 'foodRating';
+  static const String riderRating = 'riderRating';
+  static const String review = 'review';
+  static const String ratingSubmitted = 'ratingSubmitted';
+  static const String ratedAt = 'ratedAt';
+  static const String totalRatingSum = 'totalRatingSum';
+  static const String totalRatingCount = 'totalRatingCount';
+
   // Address Fields
   static const String isDefault = 'isDefault';
 
