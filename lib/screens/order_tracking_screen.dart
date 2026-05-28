@@ -102,7 +102,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
       if (destMarker != null) _markers.add(destMarker);
     });
 
-    if (shouldUpdatePolyline && order.deliveryLat != null) {
+    if (shouldUpdatePolyline && order.deliveryLat != null && order.deliveryLng != null) {
       _getRoutePolyline(riderLatLng, LatLng(order.deliveryLat!, order.deliveryLng!));
     }
 
@@ -111,7 +111,12 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
     );
   }
 
+  bool _isFetchingPolyline = false;
+
   Future<void> _getRoutePolyline(LatLng start, LatLng end) async {
+    if (_isFetchingPolyline) return;
+    _isFetchingPolyline = true;
+
     final url = Uri.parse(
         'https://maps.googleapis.com/maps/api/directions/json?origin=${start.latitude},${start.longitude}&destination=${end.latitude},${end.longitude}&key=$_googleApiKey');
 
@@ -123,19 +128,23 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
           final points = data['routes'][0]['overview_polyline']['points'];
           final decodedPoints = _decodePolyline(points);
           
-          setState(() {
-            _polylines.clear();
-            _polylines.add(Polyline(
-              polylineId: const PolylineId('route'),
-              points: decodedPoints,
-              color: AppColors.primary,
-              width: 5,
-            ));
-          });
+          if (mounted) {
+            setState(() {
+              _polylines.clear();
+              _polylines.add(Polyline(
+                polylineId: const PolylineId('route'),
+                points: decodedPoints,
+                color: AppColors.primary,
+                width: 5,
+              ));
+            });
+          }
         }
       }
     } catch (e) {
       debugPrint('Error fetching polyline: $e');
+    } finally {
+      _isFetchingPolyline = false;
     }
   }
 

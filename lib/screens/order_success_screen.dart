@@ -54,7 +54,7 @@ class _OrderSuccessScreenState extends State<OrderSuccessScreen>
                   height: 120,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.green.withOpacity(0.12),
+                    color: Colors.green.withValues(alpha: 0.12),
                     border: Border.all(color: Colors.green, width: 3),
                   ),
                   child: const Icon(

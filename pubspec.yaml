@@ -43,3 +43,12 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   generate: true
+
+  # ── Asset folders ──────────────────────────────────────────────────────────
+  # Add your images/icons/lottie files under assets/ then list the subfolder
+  # here so Flutter bundles them.  The trailing slash includes all files in
+  # that directory; subdirectories need their own entry.
+  assets:
+    - assets/images/
+    - assets/icons/
+    - assets/lottie/

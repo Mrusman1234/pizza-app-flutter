@@ -218,6 +218,7 @@ class FirestoreService {
         FirestoreConstants.body: 'Your order from $restaurantName has been delivered. Enjoy!',
         FirestoreConstants.type: 'order_delivered',
         'orderId': orderId,
+        FirestoreConstants.isRead: false,
         FirestoreConstants.createdAt: FieldValue.serverTimestamp(),
       });
     }
@@ -315,6 +316,7 @@ class FirestoreService {
       FirestoreConstants.body: 'You have been assigned a new order #$orderId',
       FirestoreConstants.type: 'order_assigned',
       'orderId': orderId,
+      FirestoreConstants.isRead: false,
       FirestoreConstants.createdAt: FieldValue.serverTimestamp(),
     });
   }
@@ -448,12 +450,33 @@ class FirestoreService {
     await _db.collection(FirestoreConstants.notifications).add({
       ...notificationData,
       FirestoreConstants.adminId: currentAdminId,
+      FirestoreConstants.isRead: false,
       FirestoreConstants.createdAt: FieldValue.serverTimestamp(),
     });
   }
 
   Future<void> deleteAdminNotification(String notificationId) async {
     await _db.collection(FirestoreConstants.notifications).doc(notificationId).delete();
+  }
+
+  Future<void> markNotificationAsRead(String notificationId) async {
+    await _db.collection(FirestoreConstants.notifications).doc(notificationId).update({
+      FirestoreConstants.isRead: true,
+    });
+  }
+
+  Future<void> markAllNotificationsAsRead(String userId, {bool isAdmin = false}) async {
+    final query = isAdmin
+        ? _db.collection(FirestoreConstants.notifications).where(FirestoreConstants.adminId, isEqualTo: userId)
+        : _db.collection(FirestoreConstants.notifications).where(FirestoreConstants.userId, isEqualTo: userId);
+
+    final snapshot = await query.where(FirestoreConstants.isRead, isEqualTo: false).get();
+
+    final batch = _db.batch();
+    for (var doc in snapshot.docs) {
+      batch.update(doc.reference, {FirestoreConstants.isRead: true});
+    }
+    await batch.commit();
   }
 
   Future<List<Map<String, dynamic>>> getCommissionData(String? adminId, DateTime startOfMonth, DateTime endOfMonth) async {
@@ -904,6 +927,7 @@ class FirestoreService {
           FirestoreConstants.body: notificationBody,
           FirestoreConstants.type: 'order_status',
           'orderId': orderId,
+          FirestoreConstants.isRead: false,
           FirestoreConstants.createdAt: FieldValue.serverTimestamp(),
         });
       }

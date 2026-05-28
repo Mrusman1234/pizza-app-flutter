@@ -1,22 +1,9 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-
-class NotificationItem {
-  final String title;
-  final String description;
-  final String time;
-  final IconData icon;
-  final Color iconColor;
-  bool isRead;
-
-  NotificationItem({
-    required this.title,
-    required this.description,
-    required this.time,
-    required this.icon,
-    required this.iconColor,
-    this.isRead = false,
-  });
-}
+import 'package:provider/provider.dart';
+import 'package:timeago/timeago.dart' as timeago;
+import '../models/notification_model.dart';
+import '../providers/notification_provider.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -26,41 +13,16 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
-  final List<NotificationItem> _notifications = [
-    NotificationItem(
-      title: "Order Delivered",
-      description: "Your order from Pizza Hub Main Branch has been delivered. Enjoy your meal!",
-      time: "2 mins ago",
-      icon: Icons.check_circle,
-      iconColor: Colors.green,
-    ),
-    NotificationItem(
-      title: "Flash Sale! 50% OFF",
-      description: "Get 50% off on all Medium pizzas for the next 2 hours. Order now!",
-      time: "1 hour ago",
-      icon: Icons.local_offer,
-      iconColor: Colors.orange,
-    ),
-    NotificationItem(
-      title: "Order Confirmed",
-      description: "We've received your order. The restaurant is preparing your food.",
-      time: "3 hours ago",
-      icon: Icons.restaurant,
-      iconColor: Colors.blue,
-    ),
-    NotificationItem(
-      title: "New Restaurant Near You",
-      description: "Cookoz Vehari is now open! Check out their amazing menu.",
-      time: "1 day ago",
-      icon: Icons.location_on,
-      iconColor: Colors.red,
-    ),
-  ];
-
   @override
   void initState() {
     super.initState();
-    // In a real app, you would mark notifications as read here or when the screen is disposed
+    // Kick off Firestore fetch once the widget tree is ready
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) {
+        context.read<NotificationProvider>().fetchNotifications(uid);
+      }
+    });
   }
 
   @override
@@ -72,7 +34,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       backgroundColor: isDark ? Colors.black : const Color(0xfff8f6f6),
       appBar: AppBar(
         title: const Text(
-          "Notifications",
+          'Notifications',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
         ),
         centerTitle: true,
@@ -80,31 +42,45 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         elevation: 0,
         foregroundColor: isDark ? Colors.white : Colors.black,
         actions: [
-          if (_notifications.isNotEmpty)
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  for (var n in _notifications) {
-                    n.isRead = true;
-                  }
-                });
-              },
-              child: Text(
-                "Mark all read",
-                style: TextStyle(color: primaryColor, fontSize: 12, fontWeight: FontWeight.bold),
-              ),
-            ),
+          Consumer<NotificationProvider>(
+            builder: (_, notifProvider, __) {
+              if (notifProvider.notifications.isEmpty) return const SizedBox.shrink();
+              return TextButton(
+                onPressed: () => notifProvider.markAllAsRead(),
+                child: Text(
+                  'Mark all read',
+                  style: TextStyle(
+                    color: primaryColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              );
+            },
+          ),
         ],
       ),
-      body: _notifications.isEmpty
-          ? _buildEmptyState(context)
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: _notifications.length,
-              itemBuilder: (context, index) {
-                return _buildNotificationCard(context, _notifications[index]);
-              },
-            ),
+      body: Consumer<NotificationProvider>(
+        builder: (_, notifProvider, __) {
+          if (notifProvider.isLoading) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (notifProvider.notifications.isEmpty) {
+            return _buildEmptyState(context);
+          }
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: notifProvider.notifications.length,
+            itemBuilder: (context, index) {
+              return _buildNotificationCard(
+                context,
+                notifProvider.notifications[index],
+                notifProvider,
+              );
+            },
+          );
+        },
+      ),
     );
   }
 
@@ -116,8 +92,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           Icon(Icons.notifications_none, size: 80, color: Colors.grey.shade400),
           const SizedBox(height: 16),
           const Text(
-            "No Notifications Yet",
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey),
+            'No Notifications Yet',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
@@ -130,9 +110,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
-  Widget _buildNotificationCard(BuildContext context, NotificationItem notification) {
+  Widget _buildNotificationCard(
+    BuildContext context,
+    NotificationModel notification,
+    NotificationProvider provider,
+  ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+    final iconData = _iconForType(notification.type);
+    final iconColor = _colorForType(notification.type);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -149,10 +135,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () {
-            setState(() {
-              notification.isRead = true;
-            });
+          onTap: () async {
+            if (!notification.isRead) {
+              await provider.markAsRead(notification.id);
+            }
           },
           borderRadius: BorderRadius.circular(16),
           child: Padding(
@@ -163,10 +149,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: notification.iconColor.withValues(alpha: 0.1),
+                    color: iconColor.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(notification.icon, color: notification.iconColor, size: 24),
+                  child: Icon(iconData, color: iconColor, size: 24),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -199,15 +185,17 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        notification.description,
+                        notification.body,
                         style: TextStyle(
                           fontSize: 13,
-                          color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                          color: isDark
+                              ? Colors.grey.shade400
+                              : Colors.grey.shade600,
                         ),
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        notification.time,
+                        timeago.format(notification.createdAt),
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
@@ -224,6 +212,37 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       ),
     );
   }
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  IconData _iconForType(String type) {
+    switch (type) {
+      case 'order_delivered':
+        return Icons.check_circle;
+      case 'order_status':
+      case 'new_order':
+        return Icons.restaurant;
+      case 'order_assigned':
+        return Icons.delivery_dining;
+      case 'promotion':
+        return Icons.local_offer;
+      default:
+        return Icons.notifications;
+    }
+  }
+
+  Color _colorForType(String type) {
+    switch (type) {
+      case 'order_delivered':
+        return Colors.green;
+      case 'order_status':
+      case 'new_order':
+        return Colors.blue;
+      case 'order_assigned':
+        return Colors.purple;
+      case 'promotion':
+        return Colors.orange;
+      default:
+        return Colors.grey;
+    }
+  }
 }
-
-

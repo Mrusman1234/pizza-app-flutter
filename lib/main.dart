@@ -41,28 +41,48 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Activate Firebase App Check
-  await FirebaseAppCheck.instance.activate(
-    androidProvider: AndroidProvider.debug,
-    appleProvider: AppleProvider.debug,
-    webProvider: ReCaptchaV3Provider('YOUR_RECAPTCHA_SITE_KEY'), // paste site key here
-  );
+  // ── Firebase App Check ────────────────────────────────────────────────────
+  // On Android/iOS, use the debug provider while in development.
+  // For production, swap AndroidProvider.debug → AndroidProvider.playIntegrity
+  // and AppleProvider.debug → AppleProvider.deviceCheck (or .appAttest).
+  //
+  // For web, replace the empty string below with your reCAPTCHA v3 site key
+  // from https://console.firebase.google.com → App Check → Web app → Register.
+  const recaptchaSiteKey = ''; // ← paste your key here for web builds
 
-  // Register background message handler
+  if (kIsWeb) {
+    if (recaptchaSiteKey.isNotEmpty) {
+      await FirebaseAppCheck.instance.activate(
+        webProvider: ReCaptchaV3Provider(recaptchaSiteKey),
+      );
+    } else {
+      // Web without a key: App Check stays inactive (fine for local dev)
+      debugPrint('⚠️  App Check: no reCAPTCHA key set — skipping web activation.');
+    }
+  } else {
+    // Mobile (Android + iOS) — always activate
+    await FirebaseAppCheck.instance.activate(
+      androidProvider: kDebugMode
+          ? AndroidProvider.debug
+          : AndroidProvider.playIntegrity,
+      appleProvider: kDebugMode
+          ? AppleProvider.debug
+          : AppleProvider.deviceCheck,
+    );
+  }
+
+  // ── Background messaging ──────────────────────────────────────────────────
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  // Initialize Notifications
+  // ── Local notifications (mobile only) ────────────────────────────────────
   if (!kIsWeb) {
     await NotificationService().init(navigatorKey: navigatorKey);
   }
-
-  // Initialize Demo Data (Optional: Seed Firestore with restaurants and deals)
-  // await FirestoreService().initializeDemoData();
 
   runApp(
     MultiProvider(
@@ -96,8 +116,8 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: AppStrings.appName,
       themeMode: themeProvider.isDark ? ThemeMode.dark : ThemeMode.light,
-      theme: lightTheme,      // light mode theme
-      darkTheme: darkTheme,   // dark mode theme
+      theme: lightTheme,
+      darkTheme: darkTheme,
       locale: themeProvider.locale,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,

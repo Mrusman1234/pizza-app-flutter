@@ -7,7 +7,9 @@ import '../services/firestore_service.dart';
 
 class CartProvider with ChangeNotifier {
   final List<CartItemModel> _items = [];
-  final FirestoreService _firestoreService = FirestoreService();
+  FirestoreService? _firestoreService;
+
+  FirestoreService get firestoreService => _firestoreService ??= FirestoreService();
 
   Map<String, dynamic>? _appliedPromo;
   double _discountAmount = 0.0;
@@ -20,11 +22,16 @@ class CartProvider with ChangeNotifier {
   /// Returns null if the cart contains items from multiple restaurants or is empty.
   String? get restaurantId {
     if (_items.isEmpty) return null;
-    return _items.first.pizza.restaurantId;
+    final firstId = _items.first.pizza.restaurantId;
+    final isMulti = _items.any((item) => item.pizza.restaurantId != firstId);
+    return isMulti ? null : firstId;
   }
 
   String? get restaurantName {
     if (_items.isEmpty) return null;
+    final firstId = _items.first.pizza.restaurantId;
+    final isMulti = _items.any((item) => item.pizza.restaurantId != firstId);
+    if (isMulti) return "Multi-restaurant Order";
     return _items.first.pizza.restaurantName ?? "Restaurant";
   }
 
@@ -50,7 +57,7 @@ class CartProvider with ChangeNotifier {
   Future<String?> applyPromoCode(String code) async {
     if (_items.isEmpty) return "Add items to cart first";
     
-    final promo = await _firestoreService.validatePromoCode(code);
+    final promo = await firestoreService.validatePromoCode(code);
     if (promo == null) return "Invalid or expired promo code";
 
     _appliedPromo = promo;

@@ -71,6 +71,7 @@ class FirestoreConstants {
   static const String body = 'body';
   static const String target = 'target';
   static const String type = 'type';
+  static const String isRead = 'isRead';
 
   // Promotion Fields
   static const String code = 'code';
