@@ -1,0 +1,19 @@
+{
+  "appName": "Pizza O Clock",
+  "login": "Login",
+  "signup": "Sign Up",
+  "logout": "Logout",
+  "email": "Email",
+  "password": "Password",
+  "name": "Full Name",
+  "forgotPassword": "Forgot Password?",
+  "dontHaveAccount": "Don't have an account? ",
+  "alreadyHaveAccount": "Already have an account? ",
+  "searchHint": "Search for pizzas or restaurants...",
+  "popularPizzas": "Popular Pizzas",
+  "nearbyRestaurants": "Nearby Restaurants",
+  "cart": "Your Cart",
+  "checkout": "Checkout",
+  "emptyCart": "Your cart is empty",
+  "somethingWentWrong": "Something went wrong. Please try again."
+}

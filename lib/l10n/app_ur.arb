@@ -1,0 +1,19 @@
+{
+  "appName": "پیزا ہب وہاڑی",
+  "login": "لاگ ان",
+  "signup": "سائن اپ",
+  "logout": "لاگ آؤٹ",
+  "email": "ای میل",
+  "password": "پاس ورڈ",
+  "name": "پورا نام",
+  "forgotPassword": "پاس ورڈ بھول گئے؟",
+  "dontHaveAccount": "اکاؤنٹ نہیں ہے؟ ",
+  "alreadyHaveAccount": "پہلے سے ہی اکاؤنٹ ہے؟ ",
+  "searchHint": "پیزا یا ریستوراں تلاش کریں...",
+  "popularPizzas": "مشہور پیزا",
+  "nearbyRestaurants": "قریبی ریستوراں",
+  "cart": "آپ کی کارٹ",
+  "checkout": "چیک آؤٹ",
+  "emptyCart": "آپ کی کارٹ خالی ہے",
+  "somethingWentWrong": "کچھ غلط ہو گیا۔ براہ کرم دوبارہ کوشش کریں۔"
+}

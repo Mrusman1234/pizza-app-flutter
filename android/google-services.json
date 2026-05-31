@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1087740697556",
+    "project_id": "online-pizza-hub-vehari",
+    "storage_bucket": "online-pizza-hub-vehari.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1087740697556:android:79f9504d4748a528f8d441",
+        "android_client_info": {
+          "package_name": "com.example.app_multi_restaurant"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBuDUxhpZ4f9qnlcmo53912tGtrJdHaEpQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

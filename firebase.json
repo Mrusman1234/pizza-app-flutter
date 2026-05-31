@@ -1,0 +1,29 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "pizza-hub-vehari",
+          "appId": "1:817904341442:android:364ae532e54b97e4ee065b",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "pizza-hub-vehari",
+          "configurations": {
+            "android": "1:817904341442:android:364ae532e54b97e4ee065b",
+            "ios": "1:817904341442:ios:d4faffc32a374e2eee065b",
+            "macos": "1:817904341442:ios:15510ae5d069a8ccee065b",
+            "web": "1:817904341442:web:a7c3dcbec8eba5adee065b",
+            "windows": "1:817904341442:web:4fa3db4ac79c93d9ee065b"
+          }
+        }
+      }
+    }
+  }
+}
