@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../models/restaurant_model.dart';
 import '../../models/pizza_model.dart';
 import '../../providers/restaurant_provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../routes/route_names.dart';
+import '../shimmer_loader.dart';
 
 class RestaurantCard extends StatefulWidget {
   final RestaurantModel restaurant;
@@ -99,12 +101,13 @@ class _RestaurantCardState extends State<RestaurantCard> {
                   children: [
                     ClipRRect(
                       borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                      child: Image.network(
-                        widget.restaurant.imageUrl,
+                      child: CachedNetworkImage(
+                        imageUrl: widget.restaurant.imageUrl,
                         height: 120,
                         width: double.infinity,
                         fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) =>
+                        placeholder: (context, url) => const ShimmerLoader(width: double.infinity, height: 120, borderRadius: 0),
+                        errorWidget: (context, url, error) =>
                             Container(height: 120, color: Colors.grey.shade300),
                       ),
                     ),
@@ -178,6 +181,23 @@ class _RestaurantCardState extends State<RestaurantCard> {
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
+                            const SizedBox(width: 8),
+                            Consumer<RestaurantProvider>(
+                              builder: (context, restProv, _) {
+                                final dist = restProv.distances[widget.restaurant.id];
+                                if (dist == null) return const SizedBox.shrink();
+                                return Row(
+                                  children: [
+                                    const Icon(Icons.location_on, color: Colors.redAccent, size: 14),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      '${dist.toStringAsFixed(1)}km',
+                                      style: const TextStyle(color: AppColors.subtle, fontSize: 11),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
                           ],
                         ),
                       ),
@@ -224,7 +244,12 @@ class _RestaurantCardState extends State<RestaurantCard> {
           // Menu Items List
           Expanded(
             child: _isLoadingMenu
-                ? const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))
+                ? ListView.separated(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    itemCount: 2,
+                    separatorBuilder: (context, index) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) => const ShimmerLoader(width: double.infinity, height: 35),
+                  )
                 : _filteredMenu.isEmpty
                     ? Center(
                         child: Text(

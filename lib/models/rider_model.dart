@@ -46,7 +46,7 @@ class RiderModel {
       vehicleNumber: map['vehicleNumber'] ?? '',
       status: map['status'] ?? 'offline',
       activeOrderId: map['activeOrderId'],
-      rating: (map['rating'] ?? 0.0).toDouble(),
+      rating: (map['rating'] as num? ?? 0.0).toDouble(),
       totalDeliveries: map['totalDeliveries'] ?? 0,
       currentLocation: map['currentLocation'] as GeoPoint?,
       createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),

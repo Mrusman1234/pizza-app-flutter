@@ -7,8 +7,10 @@ import '../../providers/order_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/deals_provider.dart';
 import '../../providers/notification_provider.dart';
+import '../../services/firestore_service.dart';
 import '../../core/constants/app_colors.dart';
 import '../../models/pizza_model.dart';
+import '../../services/location_service.dart';
 
 import '../../widgets/common/custom_bottom_nav.dart';
 
@@ -38,16 +40,29 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChanged);
-    // Fetch restaurants on init to keep provider state updated
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<RestaurantProvider>().fetchRestaurants();
-      context.read<DealsProvider>().fetchDeals();
-      final user = context.read<AppAuthProvider>().user;
-      if (user != null) {
-        context.read<OrderProvider>().fetchOrders(user.uid);
-        context.read<NotificationProvider>().fetchNotifications(user.uid);
+    _initData();
+  }
+
+  Future<void> _initData() async {
+    final user = context.read<AppAuthProvider>().user;
+    double? lat, lng;
+
+    if (user != null) {
+      final defaultAddr = await FirestoreService().getDefaultAddress(user.uid);
+      if (defaultAddr != null) {
+        lat = (defaultAddr['lat'] as num?)?.toDouble();
+        lng = (defaultAddr['lng'] as num?)?.toDouble();
       }
-    });
+    }
+
+    if (!mounted) return;
+    context.read<RestaurantProvider>().fetchRestaurants(userLat: lat, userLng: lng);
+    context.read<DealsProvider>().fetchDeals();
+    
+    if (user != null) {
+      context.read<OrderProvider>().fetchOrders(user.uid);
+      context.read<NotificationProvider>().fetchNotifications(user.uid);
+    }
   }
 
   @override
@@ -319,19 +334,35 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── LOCATION BAR ─────────────────────────────────────────────────────────
   Widget _buildLocationBar() {
-    return Container(
-      color: const Color(0xFF181818),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: const Row(
-        children: [
-          Icon(Icons.location_on, color: AppColors.primary, size: 14),
-          SizedBox(width: 5),
-          Text('Delivering to ', style: TextStyle(color: AppColors.muted, fontSize: 11)),
-          Text('Main Multan Road, Vehari',
-              style: TextStyle(color: AppColors.text, fontSize: 11, fontWeight: FontWeight.w500)),
-          Spacer(),
-          Icon(Icons.keyboard_arrow_down, color: AppColors.muted, size: 16),
-        ],
+    return InkWell(
+      onTap: () => Navigator.pushNamed(context, RouteNames.addressManagement),
+      child: Container(
+        color: const Color(0xFF181818),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            const Icon(Icons.location_on, color: AppColors.primary, size: 14),
+            const SizedBox(width: 5),
+            const Text('Delivering to ', style: TextStyle(color: AppColors.muted, fontSize: 11)),
+            Expanded(
+              child: StreamBuilder<Map<String, dynamic>?>(
+                stream: Stream.fromFuture(context.read<AppAuthProvider>().user != null 
+                  ? FirestoreService().getDefaultAddress(context.read<AppAuthProvider>().user!.uid)
+                  : Future.value(null)),
+                builder: (context, snapshot) {
+                  final address = snapshot.data?['address'] ?? 'Select your location';
+                  return Text(
+                    address,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppColors.text, fontSize: 11, fontWeight: FontWeight.w500),
+                  );
+                }
+              ),
+            ),
+            const Icon(Icons.keyboard_arrow_down, color: AppColors.muted, size: 16),
+          ],
+        ),
       ),
     );
   }

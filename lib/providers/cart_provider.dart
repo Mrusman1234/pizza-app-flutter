@@ -8,8 +8,23 @@ import '../services/firestore_service.dart';
 class CartProvider with ChangeNotifier {
   final List<CartItemModel> _items = [];
   FirestoreService? _firestoreService;
+  
+  double _baseDeliveryFee = 50.0;
+  double _taxRate = 0.05;
 
   FirestoreService get firestoreService => _firestoreService ??= FirestoreService();
+
+  CartProvider() {
+    _listenToConfig();
+  }
+
+  void _listenToConfig() {
+    firestoreService.getAppConfig().listen((data) {
+      _baseDeliveryFee = (data['baseDeliveryFee'] as num? ?? 50.0).toDouble();
+      _taxRate = (data['taxRate'] as num? ?? 0.05).toDouble();
+      notifyListeners();
+    });
+  }
 
   Map<String, dynamic>? _appliedPromo;
   double _discountAmount = 0.0;
@@ -35,24 +50,43 @@ class CartProvider with ChangeNotifier {
     return _items.first.pizza.restaurantName ?? "Restaurant";
   }
 
+  /// NEW: Group items by restaurant for multi-restaurant support
+  List<CartGroup> get groups {
+    final Map<String, List<CartItemModel>> groupedMap = {};
+    final Map<String, String> nameMap = {};
+
+    for (var item in _items) {
+      final resId = item.pizza.restaurantId;
+      groupedMap.putIfAbsent(resId, () => []);
+      groupedMap[resId]!.add(item);
+      nameMap[resId] = item.pizza.restaurantName ?? "Restaurant";
+    }
+
+    return groupedMap.entries.map((e) => CartGroup(
+      restaurantId: e.key,
+      restaurantName: nameMap[e.key]!,
+      items: e.value,
+    )).toList();
+  }
+
   int get itemCount => _items.length;
 
-  double get totalAmount {
-    double subtotalValue = _items.fold(0.0, (acc, item) => acc + (item.itemPrice * item.quantity));
-    return subtotalValue - _discountAmount;
-  }
+  double get subtotal => _items.fold(0.0, (acc, item) => acc + (item.itemPrice * item.quantity));
 
-  double get subtotal {
-    return _items.fold(0.0, (acc, item) => acc + (item.itemPrice * item.quantity));
-  }
-
-  double get deliveryFee => _items.isEmpty ? 0.0 : 50.0;
-  double get tax => _items.isEmpty ? 0.0 : 100.0;
+  // Multi-restaurant delivery logic: Charge once or per restaurant?
+  // Industry standard: Usually per restaurant if they are far apart, but for simplicity here
+  // we'll charge a base fee per unique restaurant involved.
+  double get deliveryFee => groups.length * _baseDeliveryFee;
+  
+  double get tax => subtotal * _taxRate; // Dynamic tax rate
 
   double get total {
     if (_items.isEmpty) return 0.0;
     return (subtotal - _discountAmount) + deliveryFee + tax;
   }
+
+  /// Alias for total, used by some screens
+  double get totalAmount => total;
 
   Future<String?> applyPromoCode(String code) async {
     if (_items.isEmpty) return "Add items to cart first";
@@ -70,7 +104,6 @@ class CartProvider with ChangeNotifier {
       _discountAmount = value;
     }
     
-    // Never exceed subtotal
     if (_discountAmount > subtotal) {
       _discountAmount = subtotal;
     }
@@ -94,7 +127,6 @@ class CartProvider with ChangeNotifier {
     String? restaurantName,
     String? userId,
   }) {
-    // Ensure the pizza model has the restaurant name if it was passed separately
     final updatedPizza = (pizza.restaurantName == null && restaurantName != null)
         ? pizza.copyWith(restaurantName: restaurantName)
         : pizza;
@@ -115,7 +147,6 @@ class CartProvider with ChangeNotifier {
   }
 
   void _addCartItem(CartItemModel newItem) {
-    // Check if the exact same item (same pizza, size, toppings, AND restaurant) is already in cart
     final index = _items.indexWhere((item) => 
       item.pizza.id == newItem.pizza.id && 
       item.pizza.restaurantId == newItem.pizza.restaurantId &&
@@ -185,7 +216,6 @@ class CartProvider with ChangeNotifier {
     return t1.every((t) => t2.contains(t));
   }
 
-  // Save cart to Firestore so it persists
   Future<void> syncCartToFirestore(String userId) async {
     try {
       await FirebaseFirestore.instance
@@ -200,7 +230,6 @@ class CartProvider with ChangeNotifier {
     }
   }
 
-  // Load cart from Firestore when app opens or user logs in
   Future<void> loadCartFromFirestore(String userId) async {
     try {
       final doc = await FirebaseFirestore.instance
@@ -214,16 +243,11 @@ class CartProvider with ChangeNotifier {
             .map((e) => CartItemModel.fromMap(e as Map<String, dynamic>))
             .toList();
         
-        // Merge cloud items into local cart (preserving any guest items)
         for (var item in cloudItems) {
           _addCartItem(item);
         }
         
         notifyListeners();
-        // Sync the merged result back to Firestore
-        await syncCartToFirestore(userId);
-      } else if (_items.isNotEmpty) {
-        // If no cloud cart exists but we have guest items, sync them now
         await syncCartToFirestore(userId);
       }
     } catch (e) {
@@ -231,7 +255,6 @@ class CartProvider with ChangeNotifier {
     }
   }
 
-  // Clear cart from Firestore after order placed
   Future<void> clearCartFromFirestore(String userId) async {
     try {
       await FirebaseFirestore.instance

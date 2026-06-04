@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/cart_provider.dart';
+import '../../models/cart_model.dart';
 import '../../routes/route_names.dart';
 import '../../services/firestore_service.dart';
 
@@ -87,9 +88,9 @@ class _CartScreenState extends State<CartScreen> {
     final cartItems = cartProvider.items;
     final double subtotal = cartProvider.subtotal;
     final double discount = cartProvider.discountAmount;
-    const double deliveryFee = 50.0;
-    const double tax = 100.0;
-    final double totalAmount = cartItems.isEmpty ? 0 : (subtotal - discount) + deliveryFee + tax;
+    final double deliveryFee = cartProvider.deliveryFee;
+    final double tax = cartProvider.tax;
+    final double totalAmount = cartProvider.total;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -274,13 +275,8 @@ class _CartScreenState extends State<CartScreen> {
                         child: Text("ORDER ITEMS", style: TextStyle(color: AppColors.muted, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1)),
                       ),
 
-                      /// CART ITEMS
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Column(
-                          children: cartItems.map((item) => _buildCartItem(item, cartProvider, userId)).toList(),
-                        ),
-                      ),
+                      /// CART GROUPS (BY RESTAURANT)
+                      ...cartProvider.groups.map((group) => _buildCartGroup(group, cartProvider, userId)).toList(),
 
                       /// PROMO
                       Container(
@@ -449,7 +445,40 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
-  Widget _buildCartItem(dynamic item, CartProvider provider, String? userId) {
+  Widget _buildCartGroup(CartGroup group, CartProvider provider, String? userId) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          child: Row(
+            children: [
+              const Icon(Icons.storefront, size: 14, color: AppColors.primary),
+              const SizedBox(width: 8),
+              Text(
+                group.restaurantName.toUpperCase(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            children: group.items.map((item) => _buildCartItem(item, provider, userId)).toList(),
+          ),
+        ),
+        const SizedBox(height: 12),
+      ],
+    );
+  }
+
+  Widget _buildCartItem(CartItemModel item, CartProvider provider, String? userId) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),

@@ -6,6 +6,8 @@ class OrderModel {
   final String id;
   final String userId;
   final String restaurantId;
+  final String? restaurantName;
+  final String? parentCheckoutId;
   final List<CartItemModel> items;
   final double totalAmount;
   final String status; // 'pending', 'confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'
@@ -20,11 +22,14 @@ class OrderModel {
   final String? riderPhoto;
   final double? riderRating;
   final DateTime? estimatedDeliveryTime;
+  final bool ratingSubmitted;
 
   OrderModel({
     required this.id,
     required this.userId,
     required this.restaurantId,
+    this.restaurantName,
+    this.parentCheckoutId,
     required this.items,
     required this.totalAmount,
     required this.status,
@@ -39,6 +44,7 @@ class OrderModel {
     this.riderPhoto,
     this.riderRating,
     this.estimatedDeliveryTime,
+    this.ratingSubmitted = false,
   });
 
   Map<String, dynamic> toMap() {
@@ -46,6 +52,8 @@ class OrderModel {
       'id': id,
       'userId': userId,
       'restaurantId': restaurantId,
+      'restaurantName': restaurantName,
+      'parentCheckoutId': parentCheckoutId,
       'items': items.map((item) => item.toMap()).toList(),
       'totalAmount': totalAmount,
       'status': status,
@@ -60,6 +68,7 @@ class OrderModel {
       'riderPhoto': riderPhoto,
       'riderRating': riderRating,
       'estimatedDeliveryTime': estimatedDeliveryTime?.toIso8601String(),
+      'ratingSubmitted': ratingSubmitted,
     };
   }
 
@@ -87,8 +96,10 @@ class OrderModel {
       id: map['id'] ?? '',
       userId: map['userId'] ?? '',
       restaurantId: map['restaurantId'] ?? '',
+      restaurantName: map['restaurantName'],
+      parentCheckoutId: map['parentCheckoutId'],
       items: (map['items'] as List?)?.map((item) => CartItemModel.fromMap(item)).toList() ?? [],
-      totalAmount: (map['totalAmount'] ?? 0.0).toDouble(),
+      totalAmount: (map['totalAmount'] as num?)?.toDouble() ?? 0.0,
       status: map['status'] ?? FirestoreConstants.statusPending,
       createdAt: parseDateTime(map['createdAt']),
       deliveryAddress: map['deliveryAddress'] ?? '',
@@ -101,6 +112,7 @@ class OrderModel {
       riderPhoto: map['riderPhoto'],
       riderRating: (map['riderRating'] as num?)?.toDouble(),
       estimatedDeliveryTime: parseOptionalDateTime(map['estimatedDeliveryTime']),
+      ratingSubmitted: map['ratingSubmitted'] ?? false,
     );
   }
 }

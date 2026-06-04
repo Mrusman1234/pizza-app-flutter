@@ -1,9 +1,35 @@
 import 'dart:io';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
+import 'package:image_picker/image_picker.dart';
 
 class StorageService {
   final FirebaseStorage _storage = FirebaseStorage.instance;
+  final ImagePicker _picker = ImagePicker();
+
+  /// Picks an image from the gallery and uploads it to the given path.
+  Future<String?> pickAndUploadImage(String storagePath) async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 70, // Compress to save bandwidth
+        maxWidth: 1024,
+      );
+
+      if (image == null) return null;
+
+      if (kIsWeb) {
+        final Uint8List bytes = await image.readAsBytes();
+        return await uploadFile(bytes, storagePath);
+      } else {
+        final File file = File(image.path);
+        return await uploadFile(file, storagePath);
+      }
+    } catch (e) {
+      debugPrint('StorageService pickAndUpload error: $e');
+      return null;
+    }
+  }
 
   // ✅ Upload any file and return its download URL
   Future<String?> uploadFile(dynamic file, String storagePath) async {

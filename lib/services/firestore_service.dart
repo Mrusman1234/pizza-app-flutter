@@ -1,7 +1,10 @@
+import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import '../core/constants/firestore_constants.dart';
+import '../models/chat_model.dart';
+import '../models/cart_model.dart';
 import 'audit_service.dart';
 
 class FirestoreService {
@@ -9,11 +12,16 @@ class FirestoreService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final AuditService _audit = AuditService();
 
-  Stream<List<Map<String, dynamic>>> getRestaurants({String? searchQuery, String? filter, String? adminId}) {
+  Stream<List<Map<String, dynamic>>> getRestaurants({String? searchQuery, String? filter, String? adminId, String? restaurantId}) {
     Query query = _db.collection(FirestoreConstants.restaurants);
 
     if (adminId != null) {
       query = query.where(FirestoreConstants.adminId, isEqualTo: adminId);
+    }
+    
+    if (restaurantId != null) {
+      // Direct isolation for Restaurant Admins
+      query = query.where(FieldPath.documentId, isEqualTo: restaurantId);
     }
 
     if (filter == 'Rating 4.0+') {
@@ -29,8 +37,8 @@ class FirestoreService {
     return query.snapshots().map((snapshot) {
       List<Map<String, dynamic>> restaurants = snapshot.docs
           .map((doc) => {
+                ...doc.data() as Map<String, dynamic>,
                 FirestoreConstants.id: doc.id,
-                ...doc.data() as Map<String, dynamic>
               })
           .toList();
 
@@ -59,6 +67,7 @@ class FirestoreService {
   }
 
   Stream<List<Map<String, dynamic>>> getCart(String userId) {
+    if (userId.isEmpty) return Stream.value([]);
     return _db
         .collection(FirestoreConstants.users)
         .doc(userId)
@@ -66,8 +75,8 @@ class FirestoreService {
         .snapshots()
         .map((snapshot) => snapshot.docs
             .map((doc) => {
+                  ...doc.data() as Map<String, dynamic>,
                   FirestoreConstants.id: doc.id,
-                  ...doc.data()
                 })
             .toList());
   }
@@ -119,6 +128,10 @@ class FirestoreService {
   }
 
   Stream<List<Map<String, dynamic>>> getMenuItems(String restaurantId) {
+    if (restaurantId.isEmpty) {
+      debugPrint('❌ Error: getMenuItems called with empty restaurantId');
+      return Stream.value([]);
+    }
     return _db
         .collection(FirestoreConstants.restaurants)
         .doc(restaurantId)
@@ -126,9 +139,9 @@ class FirestoreService {
         .snapshots()
         .map((snapshot) => snapshot.docs
             .map((doc) => {
+                  ...doc.data() as Map<String, dynamic>,
                   FirestoreConstants.id: doc.id,
                   FirestoreConstants.restaurantId: restaurantId,
-                  ...doc.data()
                 })
             .toList());
   }
@@ -137,10 +150,16 @@ class FirestoreService {
     return _db.collectionGroup(FirestoreConstants.menu).snapshots().map((snapshot) {
       return snapshot.docs.map((doc) {
         final data = doc.data();
+        final parentId = doc.reference.parent.parent?.id ?? '';
+        
+        if (parentId.isEmpty) {
+          debugPrint('⚠️ Warning: Found menu item ${doc.id} without parent restaurant ID');
+        }
+
         return {
+          ...data,
           FirestoreConstants.id: doc.id,
-          FirestoreConstants.restaurantId: doc.reference.parent.parent?.id ?? '',
-          ...data
+          FirestoreConstants.restaurantId: parentId,
         };
       }).toList();
     });
@@ -151,18 +170,22 @@ class FirestoreService {
 
     final searchLower = query.toLowerCase();
 
-    // Firestore doesn't support full-text search or case-insensitive contains natively without 3rd party
-    // For small-medium datasets, we can fetch all or use a 'searchKey' array in Firestore
-    // Here we'll use a prefix-based query if we want Firestore-side filtering,
-    // but for "contains" we usually filter client-side or use a collectionGroup query.
-
     return _db.collectionGroup(FirestoreConstants.menu).snapshots().map((snapshot) {
       return snapshot.docs
-          .map((doc) => {
-                FirestoreConstants.id: doc.id,
-                FirestoreConstants.restaurantId: doc.reference.parent.parent?.id ?? '',
-                ...doc.data()
-              })
+          .map((doc) {
+            final data = doc.data();
+            final parentId = doc.reference.parent.parent?.id ?? '';
+            
+            if (parentId.isEmpty) {
+              debugPrint('⚠️ Warning: Search result ${doc.id} has empty parent restaurant ID');
+            }
+
+            return {
+              ...data,
+              FirestoreConstants.id: doc.id,
+              FirestoreConstants.restaurantId: parentId,
+            };
+          })
           .where((item) {
             final name = (item[FirestoreConstants.name] ?? '').toString().toLowerCase();
             return name.contains(searchLower);
@@ -175,44 +198,91 @@ class FirestoreService {
     return _db.collection(FirestoreConstants.deals).snapshots().map((snapshot) {
       return snapshot.docs
           .map((doc) => {
+                ...doc.data(),
                 FirestoreConstants.id: doc.id,
-                ...doc.data()
               })
           .toList();
     });
   }
 
   Future<void> updateRiderStatus(String riderId, String status) async {
+    if (riderId.isEmpty) return;
     await _db.collection(FirestoreConstants.users).doc(riderId).update({
       FirestoreConstants.status: status,
     });
   }
 
   Future<void> completeOrder(String orderId, String riderId) async {
+    if (orderId.isEmpty || riderId.isEmpty) return;
+
+    final orderSnap = await _db.collection(FirestoreConstants.orders).doc(orderId).get();
+    if (!orderSnap.exists) return;
+    
+    final orderData = orderSnap.data()!;
+    final subtotal = (orderData[FirestoreConstants.subtotal] as num? ?? 0).toDouble();
+    final commission = (orderData[FirestoreConstants.commissionAmount] as num? ?? 0).toDouble();
+    final deliveryFee = (orderData[FirestoreConstants.deliveryFee] as num? ?? 0).toDouble();
+    final restaurantId = orderData[FirestoreConstants.restaurantId] as String?;
+    final restaurantName = orderData[FirestoreConstants.restaurantName] as String? ?? 'Restaurant';
+
     final batch = _db.batch();
 
-    // 1. Update Order
+    // 1. Update Order Status
     final orderRef = _db.collection(FirestoreConstants.orders).doc(orderId);
     batch.update(orderRef, {
       FirestoreConstants.status: FirestoreConstants.statusDelivered,
       FirestoreConstants.deliveredAt: FieldValue.serverTimestamp(),
     });
 
-    // 2. Update Rider
+    // 2. Update Rider Availability
     final riderRef = _db.collection(FirestoreConstants.users).doc(riderId);
     batch.update(riderRef, {
       FirestoreConstants.status: FirestoreConstants.riderStatusAvailable,
       FirestoreConstants.activeOrderId: FieldValue.delete(),
     });
 
+    // 3. Process Financials: Rider Earnings
+    final riderWalletRef = _db.collection(FirestoreConstants.wallets).doc(riderId);
+    batch.set(riderWalletRef, {
+      'balance': FieldValue.increment(deliveryFee),
+      'totalEarned': FieldValue.increment(deliveryFee),
+      'lastUpdated': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    final riderTxnRef = riderWalletRef.collection(FirestoreConstants.walletTransactions).doc();
+    batch.set(riderTxnRef, {
+      'amount': deliveryFee,
+      'type': 'earnings',
+      'description': 'Delivery fee for order #$orderId',
+      'orderId': orderId,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+
+    // 4. Process Financials: Restaurant Earnings
+    if (restaurantId != null) {
+      final restaurantWalletRef = _db.collection(FirestoreConstants.wallets).doc(restaurantId);
+      final restaurantEarnings = subtotal - commission;
+
+      batch.set(restaurantWalletRef, {
+        'balance': FieldValue.increment(restaurantEarnings),
+        'totalEarned': FieldValue.increment(restaurantEarnings),
+        'lastUpdated': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      final restaurantTxnRef = restaurantWalletRef.collection(FirestoreConstants.walletTransactions).doc();
+      batch.set(restaurantTxnRef, {
+        'amount': restaurantEarnings,
+        'type': 'earnings',
+        'description': 'Earnings from order #$orderId',
+        'orderId': orderId,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    }
+
     await batch.commit();
 
-    // 3. Notify Customer
-    final orderDoc = await orderRef.get();
-    final orderData = orderDoc.data();
-    final userId = orderData?[FirestoreConstants.userId];
-    final restaurantName = orderData?[FirestoreConstants.restaurantName];
-
+    // 5. Notify Customer
+    final userId = orderData[FirestoreConstants.userId];
     if (userId != null) {
       await _db.collection(FirestoreConstants.notifications).add({
         FirestoreConstants.userId: userId,
@@ -226,7 +296,94 @@ class FirestoreService {
     }
   }
 
+  Stream<Map<String, dynamic>?> getWallet(String id) {
+    if (id.isEmpty) return Stream.value(null);
+    return _db.collection(FirestoreConstants.wallets).doc(id).snapshots().map((doc) {
+      if (doc.exists) {
+        return doc.data();
+      }
+      return {
+        'balance': 0.0,
+        'totalEarned': 0.0,
+        'totalWithdrawn': 0.0,
+      };
+    });
+  }
+
+  Stream<List<Map<String, dynamic>>> getWalletTransactions(String id) {
+    if (id.isEmpty) return Stream.value([]);
+    return _db
+        .collection(FirestoreConstants.wallets)
+        .doc(id)
+        .collection(FirestoreConstants.walletTransactions)
+        .orderBy('timestamp', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => {
+                  ...doc.data(),
+                  FirestoreConstants.id: doc.id,
+                })
+            .toList());
+  }
+
+  Future<void> requestWithdrawal(String id, double amount, String method, String details) async {
+    if (id.isEmpty || amount <= 0) return;
+
+    final walletRef = _db.collection(FirestoreConstants.wallets).doc(id);
+    final walletSnap = await walletRef.get();
+    final balance = (walletSnap.data()?['balance'] as num? ?? 0).toDouble();
+
+    if (balance < amount) throw Exception("Insufficient balance");
+
+    final batch = _db.batch();
+
+    // 1. Deduct from balance
+    batch.update(walletRef, {
+      'balance': FieldValue.increment(-amount),
+      'totalWithdrawn': FieldValue.increment(amount),
+      'lastUpdated': FieldValue.serverTimestamp(),
+    });
+
+    // 2. Record Transaction
+    final txnRef = walletRef.collection(FirestoreConstants.walletTransactions).doc();
+    batch.set(txnRef, {
+      'amount': -amount,
+      'type': 'withdrawal',
+      'description': 'Withdrawal request via $method',
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+
+    // 3. Create global withdrawal request for Super Admin
+    final requestRef = _db.collection('withdrawal_requests').doc();
+    batch.set(requestRef, {
+      'userId': id,
+      'amount': amount,
+      'method': method,
+      'details': details,
+      'status': 'pending',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    await batch.commit();
+  }
+
+  Stream<Map<String, dynamic>> getAppConfig() {
+    return _db
+        .collection(FirestoreConstants.appConfig)
+        .doc('settings')
+        .snapshots()
+        .map((doc) => doc.exists ? doc.data()! : {});
+  }
+
+  Future<void> updateAppConfig(Map<String, dynamic> config) async {
+    await _db
+        .collection(FirestoreConstants.appConfig)
+        .doc('settings')
+        .set(config, SetOptions(merge: true));
+  }
+
   Future<void> acceptOrder(String orderId, String riderId, String riderName) async {
+    if (orderId.isEmpty || riderId.isEmpty) return;
     final batch = _db.batch();
 
     // Get rider's phone first
@@ -254,6 +411,7 @@ class FirestoreService {
   }
 
   Stream<Map<String, dynamic>?> getRiderById(String riderId) {
+    if (riderId.isEmpty) return Stream.value(null);
     return _db.collection(FirestoreConstants.users).doc(riderId).snapshots().map((doc) {
       final data = doc.data();
       if (doc.exists && data != null) {
@@ -267,6 +425,7 @@ class FirestoreService {
   }
 
   Future<void> updateRiderLocation(String riderId, double lat, double lng) async {
+    if (riderId.isEmpty) return;
     await _db.collection(FirestoreConstants.users).doc(riderId).update({
       FirestoreConstants.currentLocation: GeoPoint(lat, lng),
     });
@@ -293,6 +452,7 @@ class FirestoreService {
   }
 
   Future<void> assignRiderToOrder(String orderId, String riderId, String riderName) async {
+    if (orderId.isEmpty || riderId.isEmpty) return;
     final batch = _db.batch();
 
     // 1. Update Order
@@ -353,10 +513,12 @@ class FirestoreService {
   }
 
   Future<void> updateRider(String riderId, Map<String, dynamic> riderData) async {
+    if (riderId.isEmpty) return;
     await _db.collection(FirestoreConstants.users).doc(riderId).update(riderData);
   }
 
   Future<void> deleteRider(String riderId) async {
+    if (riderId.isEmpty) return;
     await _db.collection(FirestoreConstants.users).doc(riderId).delete();
   }
 
@@ -409,14 +571,17 @@ class FirestoreService {
   }
 
   Future<void> updatePromotion(String promoId, Map<String, dynamic> promoData) async {
+    if (promoId.isEmpty) return;
     await _db.collection(FirestoreConstants.promotions).doc(promoId).update(promoData);
   }
 
   Future<void> deletePromotion(String promoId) async {
+    if (promoId.isEmpty) return;
     await _db.collection(FirestoreConstants.promotions).doc(promoId).delete();
   }
 
   Stream<List<Map<String, dynamic>>> getUserNotifications(String userId) {
+    if (userId.isEmpty) return Stream.value([]);
     return _db
         .collection(FirestoreConstants.notifications)
         .where(FirestoreConstants.userId, isEqualTo: userId)
@@ -424,17 +589,21 @@ class FirestoreService {
         .snapshots()
         .map((snapshot) {
       return snapshot.docs.map((doc) => {
+        ...doc.data(),
         FirestoreConstants.id: doc.id,
-        ...doc.data()
       }).toList();
     });
   }
 
-  Stream<List<Map<String, dynamic>>> getAdminNotifications({String? adminId}) {
+  Stream<List<Map<String, dynamic>>> getAdminNotifications({String? adminId, String? restaurantId}) {
     Query query = _db.collection(FirestoreConstants.notifications);
 
-    if (adminId != null) {
+    if (adminId != null && adminId.isNotEmpty) {
       query = query.where(FirestoreConstants.adminId, isEqualTo: adminId);
+    }
+    
+    if (restaurantId != null && restaurantId.isNotEmpty) {
+      query = query.where(FirestoreConstants.restaurantId, isEqualTo: restaurantId);
     }
 
     return query
@@ -442,8 +611,8 @@ class FirestoreService {
         .snapshots()
         .map((snapshot) {
       return snapshot.docs.map((doc) => <String, dynamic>{
+        ...doc.data() as Map<String, dynamic>,
         FirestoreConstants.id: doc.id,
-        ...doc.data() as Map<String, dynamic>
       }).toList();
     });
   }
@@ -459,16 +628,19 @@ class FirestoreService {
   }
 
   Future<void> deleteAdminNotification(String notificationId) async {
+    if (notificationId.isEmpty) return;
     await _db.collection(FirestoreConstants.notifications).doc(notificationId).delete();
   }
 
   Future<void> markNotificationAsRead(String notificationId) async {
+    if (notificationId.isEmpty) return;
     await _db.collection(FirestoreConstants.notifications).doc(notificationId).update({
       FirestoreConstants.isRead: true,
     });
   }
 
   Future<void> updateNotificationPreferences(String userId, {bool? push, bool? sms, bool? email}) async {
+    if (userId.isEmpty) return;
     final Map<String, dynamic> updates = {};
     if (push != null) updates[FirestoreConstants.pushEnabled] = push;
     if (sms != null) updates[FirestoreConstants.smsEnabled] = sms;
@@ -598,11 +770,29 @@ class FirestoreService {
   }
 
   Future<void> updateRestaurant(String restaurantId, Map<String, dynamic> restaurantData) async {
+    if (restaurantId.isEmpty) return;
     await _db.collection(FirestoreConstants.restaurants).doc(restaurantId).update(restaurantData);
   }
 
   Future<void> deleteRestaurant(String restaurantId) async {
-    await _db.collection(FirestoreConstants.restaurants).doc(restaurantId).delete();
+    if (restaurantId.isEmpty) return;
+    
+    // 1. Delete all menu items under this restaurant
+    final menuSnapshot = await _db
+        .collection(FirestoreConstants.restaurants)
+        .doc(restaurantId)
+        .collection(FirestoreConstants.menu)
+        .get();
+        
+    final batch = _db.batch();
+    for (var doc in menuSnapshot.docs) {
+      batch.delete(doc.reference);
+    }
+    
+    // 2. Delete the restaurant document
+    batch.delete(_db.collection(FirestoreConstants.restaurants).doc(restaurantId));
+    
+    await batch.commit();
   }
 
   Future<Map<String, dynamic>?> validatePromoCode(String code) async {
@@ -626,6 +816,7 @@ class FirestoreService {
   }
 
   Future<void> incrementPromoRedemption(String promoId) async {
+    if (promoId.isEmpty) return;
     try {
       await _db
           .collection(FirestoreConstants.promotions)
@@ -639,6 +830,7 @@ class FirestoreService {
   }
 
   Future<void> addMenuItem(String restaurantId, Map<String, dynamic> itemData) async {
+    if (restaurantId.isEmpty) return;
     final docRef = await _db
         .collection(FirestoreConstants.restaurants)
         .doc(restaurantId)
@@ -652,6 +844,7 @@ class FirestoreService {
   }
 
   Future<void> updateMenuItem(String restaurantId, String itemId, Map<String, dynamic> itemData) async {
+    if (restaurantId.isEmpty || itemId.isEmpty) return;
     await _db
         .collection(FirestoreConstants.restaurants)
         .doc(restaurantId)
@@ -663,6 +856,7 @@ class FirestoreService {
   }
 
   Future<void> deleteMenuItem(String restaurantId, String itemId) async {
+    if (restaurantId.isEmpty || itemId.isEmpty) return;
     await _db
         .collection(FirestoreConstants.restaurants)
         .doc(restaurantId)
@@ -674,6 +868,10 @@ class FirestoreService {
   }
 
   Stream<Map<String, dynamic>?> getRestaurantByIdStream(String id) {
+    if (id.isEmpty) {
+      debugPrint('❌ Error: getRestaurantByIdStream called with empty ID');
+      return Stream.value(null);
+    }
     return _db.collection(FirestoreConstants.restaurants).doc(id).snapshots().map((doc) {
       final data = doc.data();
       if (doc.exists && data != null) {
@@ -686,14 +884,61 @@ class FirestoreService {
     });
   }
 
+  Stream<List<MessageModel>> getMessages(String orderId) {
+    return _db
+        .collection(FirestoreConstants.orders)
+        .doc(orderId)
+        .collection('chat')
+        .orderBy('timestamp', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => MessageModel.fromMap(doc.id, doc.data()))
+            .toList());
+  }
+
+  Future<void> sendMessage(String orderId, MessageModel message) async {
+    if (orderId.isEmpty) return;
+    await _db
+        .collection(FirestoreConstants.orders)
+        .doc(orderId)
+        .collection('chat')
+        .add(message.toMap());
+  }
+
+  Future<void> toggleFavorite(String userId, String pizzaId) async {
+    if (userId.isEmpty || pizzaId.isEmpty) return;
+    final favRef = _db.collection(FirestoreConstants.users).doc(userId).collection('favorites').doc(pizzaId);
+    final doc = await favRef.get();
+    if (doc.exists) {
+      await favRef.delete();
+    } else {
+      await favRef.set({
+        'pizzaId': pizzaId,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
+  Stream<bool> isFavorite(String userId, String pizzaId) {
+    if (userId.isEmpty || pizzaId.isEmpty) return Stream.value(false);
+    return _db
+        .collection(FirestoreConstants.users)
+        .doc(userId)
+        .collection('favorites')
+        .doc(pizzaId)
+        .snapshots()
+        .map((doc) => doc.exists);
+  }
+
   Future<Map<String, dynamic>?> getRestaurantById(String id) async {
+    if (id.isEmpty) return null;
     try {
       final doc = await _db.collection(FirestoreConstants.restaurants).doc(id).get();
       final data = doc.data();
       if (doc.exists && data != null) {
         return <String, dynamic>{
+          ...data,
           FirestoreConstants.id: doc.id,
-          ...data
         };
       }
     } catch (e) {
@@ -791,6 +1036,74 @@ class FirestoreService {
     }
   }
 
+  Future<void> placeOrders({
+    required String userId,
+    required List<CartGroup> cartGroups,
+    required String address,
+    required String userPhone, // Added for validation
+    required String userName,  // Added for validation
+    double? lat,
+    double? lng,
+    required String paymentMethod,
+    String? promoCode,
+  }) async {
+    try {
+      if (userId.isEmpty) throw Exception("User ID is empty");
+
+      // ── Step 1: Client side validation ───────────────────────────────────
+      final phoneRegex = RegExp(r'^03\d{9}$');
+      if (!phoneRegex.hasMatch(userPhone)) throw Exception("Invalid phone format");
+
+      final nameRegex = RegExp(r'^[a-zA-Z\s]{3,30}$');
+      if (!nameRegex.hasMatch(userName)) throw Exception("Invalid name format");
+
+      // ── Step 2: Create Order Requests (Drafts) ──────────────────────────
+      // This collection has rules that prevent setting the 'totalAmount'.
+      // A Cloud Function should watch this collection, verify prices, and 
+      // create the final Order document.
+      
+      final String checkoutId = _db.collection('checkouts').doc().id;
+      final batch = _db.batch();
+      final String deliveryPin = (1000 + Random().nextInt(9000)).toString();
+
+      for (var group in cartGroups) {
+        final requestRef = _db.collection('order_requests').doc();
+        
+        final requestData = {
+          'userId': userId,
+          'userName': userName,
+          'userPhone': userPhone,
+          'parentCheckoutId': checkoutId,
+          'restaurantId': group.restaurantId,
+          'restaurantName': group.restaurantName,
+          'items': group.items.map((item) => {
+            'pizzaId': item.pizza.id,
+            'quantity': item.quantity,
+            'size': item.size,
+            'extraToppings': item.extraToppings,
+            'instructions': item.instructions,
+          }).toList(),
+          'address': address,
+          'lat': lat,
+          'lng': lng,
+          'paymentMethod': paymentMethod,
+          'promoCode': promoCode,
+          'deliveryPin': deliveryPin,
+          'createdAt': FieldValue.serverTimestamp(),
+          'status': 'Draft',
+        };
+
+        batch.set(requestRef, requestData);
+      }
+
+      await batch.commit();
+    } catch (e) {
+      debugPrint("Security Violation / Error: $e");
+      rethrow;
+    }
+  }
+
+  @Deprecated('Use placeOrders instead for multi-restaurant support')
   Future<String> placeOrder({
     required String userId,
     required List<Map<String, dynamic>> items,
@@ -869,6 +1182,7 @@ class FirestoreService {
   }
 
   Stream<List<Map<String, dynamic>>> getOrders(String userId) {
+    if (userId.isEmpty) return Stream.value([]);
     return _db
         .collection(FirestoreConstants.orders)
         .where(FirestoreConstants.userId, isEqualTo: userId)
@@ -876,8 +1190,8 @@ class FirestoreService {
         .map((snapshot) {
       final orders = snapshot.docs
           .map((doc) => <String, dynamic>{
+                ...doc.data(),
                 FirestoreConstants.id: doc.id,
-                ...doc.data()
               })
           .toList();
       orders.sort((a, b) {
@@ -906,17 +1220,21 @@ class FirestoreService {
             .toList());
   }
 
-  Stream<List<Map<String, dynamic>>> getAllOrders({String? adminId}) {
+  Stream<List<Map<String, dynamic>>> getAllOrders({String? adminId, String? restaurantId}) {
     Query query = _db.collection(FirestoreConstants.orders);
 
-    if (adminId != null) {
+    if (adminId != null && adminId.isNotEmpty) {
       query = query.where(FirestoreConstants.adminId, isEqualTo: adminId);
+    }
+    
+    if (restaurantId != null && restaurantId.isNotEmpty) {
+      query = query.where(FirestoreConstants.restaurantId, isEqualTo: restaurantId);
     }
 
     return query.orderBy(FirestoreConstants.createdAt, descending: true).snapshots().map((snapshot) => snapshot.docs
         .map((doc) => <String, dynamic>{
+              ...doc.data() as Map<String, dynamic>,
               FirestoreConstants.id: doc.id,
-              ...doc.data() as Map<String, dynamic>
             })
         .toList());
   }
@@ -1013,13 +1331,30 @@ class FirestoreService {
     await batch.commit();
   }
 
+  Stream<List<Map<String, dynamic>>> getOrdersByCheckoutId(String checkoutId) {
+    return _db
+        .collection(FirestoreConstants.orders)
+        .where('parentCheckoutId', isEqualTo: checkoutId)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => {
+                  ...doc.data(),
+                  FirestoreConstants.id: doc.id,
+                })
+            .toList());
+  }
+
   Stream<Map<String, dynamic>?> getOrderById(String orderId) {
+    if (orderId.isEmpty) {
+      debugPrint('❌ Error: getOrderById called with empty orderId');
+      return Stream.value(null);
+    }
     return _db.collection(FirestoreConstants.orders).doc(orderId).snapshots().map((doc) {
       final data = doc.data();
       if (doc.exists && data != null) {
         return <String, dynamic>{
+          ...data,
           FirestoreConstants.id: doc.id,
-          ...data
         };
       }
       return null;
@@ -1027,6 +1362,7 @@ class FirestoreService {
   }
 
   Future<bool> cancelOrder(String orderId) async {
+    if (orderId.isEmpty) return false;
     try {
       final docRef = _db.collection(FirestoreConstants.orders).doc(orderId);
       final doc = await docRef.get();
@@ -1047,6 +1383,7 @@ class FirestoreService {
   }
 
   Future<void> saveAddress(String userId, Map<String, dynamic> addressData) async {
+    if (userId.isEmpty) return;
     try {
       await _db
           .collection(FirestoreConstants.users)
@@ -1063,6 +1400,7 @@ class FirestoreService {
   }
 
   Stream<List<Map<String, dynamic>>> getAddresses(String userId) {
+    if (userId.isEmpty) return Stream.value([]);
     return _db
         .collection(FirestoreConstants.users)
         .doc(userId)
@@ -1071,13 +1409,14 @@ class FirestoreService {
         .snapshots()
         .map((snapshot) => snapshot.docs
             .map((doc) => {
+                  ...doc.data() as Map<String, dynamic>,
                   FirestoreConstants.id: doc.id,
-                  ...doc.data()
                 })
             .toList());
   }
 
   Future<void> deleteAddress(String userId, String addressId) async {
+    if (userId.isEmpty || addressId.isEmpty) return;
     try {
       await _db
           .collection(FirestoreConstants.users)
@@ -1092,6 +1431,7 @@ class FirestoreService {
   }
 
   Future<void> updateAddress(String userId, String addressId, Map<String, dynamic> addressData) async {
+    if (userId.isEmpty || addressId.isEmpty) return;
     try {
       await _db
           .collection(FirestoreConstants.users)
@@ -1106,6 +1446,7 @@ class FirestoreService {
   }
 
   Future<void> setDefaultAddress(String userId, String addressId) async {
+    if (userId.isEmpty || addressId.isEmpty) return;
     try {
       final batch = _db.batch();
       final addressesRef = _db.collection(FirestoreConstants.users).doc(userId).collection(FirestoreConstants.addresses);
@@ -1123,6 +1464,7 @@ class FirestoreService {
   }
 
   Future<Map<String, dynamic>?> getDefaultAddress(String userId) async {
+    if (userId.isEmpty) return null;
     try {
       final snapshot = await _db
           .collection(FirestoreConstants.users)
@@ -1135,8 +1477,8 @@ class FirestoreService {
       if (snapshot.docs.isNotEmpty) {
         final data = snapshot.docs.first.data();
         return <String, dynamic>{
+          ...data,
           FirestoreConstants.id: snapshot.docs.first.id,
-          ...data
         };
       }
       return null;

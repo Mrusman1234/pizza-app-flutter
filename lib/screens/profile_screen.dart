@@ -230,7 +230,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         _ActionCard(
                           icon: Icons.payment_outlined,
                           label: "Payment Methods",
-                          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const PaymentMethodsScreen())),
+                          onTap: () => Navigator.pushNamed(context, RouteNames.paymentMethods),
                         ),
                         _ActionCard(
                           icon: Icons.notifications_none_outlined,
@@ -249,7 +249,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         _ActionCard(
                           icon: Icons.info_outline,
                           label: "About Pizza O Clock",
-                          onTap: () {},
+                          onTap: () {
+                            showAboutDialog(
+                              context: context,
+                              applicationName: 'Pizza O Clock',
+                              applicationVersion: '1.0.0',
+                              applicationIcon: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(Icons.local_pizza, color: Colors.white, size: 30),
+                              ),
+                              children: const [
+                                Text(
+                                  "The most authentic and delicious square pizza experience in Vehari. We use fresh ingredients and traditional recipes to serve you the best meal every time.",
+                                  style: TextStyle(color: AppColors.subtle),
+                                ),
+                              ],
+                            );
+                          },
                         ),
 
                         const SizedBox(height: 32),

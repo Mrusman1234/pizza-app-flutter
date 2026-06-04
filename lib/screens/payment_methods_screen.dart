@@ -288,6 +288,54 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
     );
   }
 
+  void _showAddMethodDialog() {
+    final nameCtrl = TextEditingController();
+    final detailCtrl = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        title: const Text('Add Payment Method', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: 'Method Name (e.g. My Visa)',
+                labelStyle: TextStyle(color: Color(0xFF94A3B8)),
+              ),
+            ),
+            TextField(
+              controller: detailCtrl,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: 'Detail (e.g. **** 1234)',
+                labelStyle: TextStyle(color: Color(0xFF94A3B8)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () {
+              if (nameCtrl.text.isNotEmpty) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('${nameCtrl.text} added! (Mock)')),
+                );
+              }
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAddNewButton(Color primary) {
     return Container(
       width: double.infinity,
@@ -306,11 +354,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Add New Method feature coming soon!')),
-            );
-          },
+          onTap: _showAddMethodDialog,
           borderRadius: BorderRadius.circular(20),
           child: const Center(
             child: Row(

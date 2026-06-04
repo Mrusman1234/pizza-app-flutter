@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../services/payment_service.dart';
 import '../routes/route_names.dart';
@@ -38,8 +39,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
     setState(() => _isLoading = true);
 
     try {
-      Map<String, dynamic> result;
       final paymentService = PaymentService();
+      Map<String, dynamic> result;
+      
       if (_selectedMethod == 'jazzcash') {
         result = await paymentService.payWithJazzCash(
           mobileNumber: phone,
@@ -47,6 +49,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           orderId: widget.orderId,
         );
       } else {
+        // Implement EasyPaisa production logic similarly
         result = await paymentService.payWithEasyPaisa(
           mobileNumber: phone,
           amount: widget.amount,
@@ -54,19 +57,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
         );
       }
 
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-
-      if (result['success'] == true) {
-        Navigator.pushReplacementNamed(
-          context,
-          RouteNames.orderSuccess,
-          arguments: result['txnRef'],
-        );
+      if (result['initiated'] == true) {
+        // ── PRODUCTION LOGIC: Listen for Webhook ──────────────────────────
+        _listenForPaymentStatus(widget.orderId);
       } else {
+        if (!mounted) return;
+        setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Payment failed: ${result['message']}'),
+            content: Text('Payment initiation failed: ${result['message']}'),
             backgroundColor: Colors.redAccent,
           ),
         );
@@ -79,6 +78,34 @@ class _PaymentScreenState extends State<PaymentScreen> {
         );
       }
     }
+  }
+
+  void _listenForPaymentStatus(String checkoutId) {
+    FirebaseFirestore.instance
+        .collection('checkouts')
+        .doc(checkoutId)
+        .snapshots()
+        .listen((snapshot) {
+      if (!mounted) return;
+      if (snapshot.exists) {
+        final status = snapshot.data()?['status'];
+        if (status == 'paid') {
+          Navigator.pushReplacementNamed(
+            context,
+            RouteNames.orderSuccess,
+            arguments: snapshot.data()?['txnRef'] ?? checkoutId,
+          );
+        } else if (status == 'failed') {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Payment Failed: ${snapshot.data()?['error'] ?? "Transaction declined"}'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      }
+    });
   }
 
   @override

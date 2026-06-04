@@ -36,6 +36,13 @@
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="AIzaSyDecEs4ql9moIyK9JoLAXsmnCJUAOEhdCA"/>
+
+        <!-- ✅ Required for Background Location Service -->
+        <service
+            android:name="com.baseflow.geolocator.GeolocatorLocationService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location" />
     </application>
     <queries>
         <!-- Support for url_launcher schemes -->

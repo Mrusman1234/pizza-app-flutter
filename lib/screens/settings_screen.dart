@@ -296,9 +296,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             'Payment Methods',
             context,
             isLast: true,
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payment methods coming soon')));
-            },
+            onTap: () => Navigator.pushNamed(context, RouteNames.paymentMethods),
           ),
         ],
       ),

@@ -43,6 +43,13 @@ class RiderProvider with ChangeNotifier {
     final hasPermission = await _locationService.requestPermissions();
     if (!hasPermission) return;
 
+    // ── GEOFENCING: Request "Always" for Background ───────────────────
+    final hasBackground = await _locationService.requestBackgroundPermission();
+    if (!hasBackground) {
+      debugPrint('⚠️ Warning: Rider did not grant background location permission.');
+      // We continue, but it might get killed in background
+    }
+
     _isTracking = true;
     notifyListeners();
 

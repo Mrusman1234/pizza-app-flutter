@@ -29,7 +29,7 @@ class CartItemModel {
   }
 
   factory CartItemModel.fromMap(Map<String, dynamic> map) {
-    PizzaModel pizza;
+     PizzaModel pizza;
     if (map['pizza'] != null) {
       pizza = PizzaModel.fromMap(map['pizza']);
     } else {
@@ -39,7 +39,7 @@ class CartItemModel {
         name: map['name'] ?? '',
         description: map['description'] ?? '',
         imageUrl: map['imageUrl'] ?? '',
-        price: (map['basePrice'] ?? map['price'] ?? 0.0).toDouble(),
+        price: (map['basePrice'] as num? ?? map['price'] as num? ?? 0.0).toDouble(),
         restaurantId: map['restaurantId'] ?? '',
         category: map['category'] ?? '',
         ingredients: map['ingredients'] != null ? List<String>.from(map['ingredients']) : [],
@@ -52,19 +52,44 @@ class CartItemModel {
       instructions: map['instructions'],
       size: map['size'],
       extraToppings: map['extraToppings'] != null ? List<String>.from(map['extraToppings']) : null,
-      itemPrice: (map['itemPrice'] ?? map['price'] ?? 0.0).toDouble(),
+      itemPrice: (map['itemPrice'] as num? ?? map['price'] as num? ?? 0.0).toDouble(),
     );
   }
 }
 
-class CartModel {
-  final List<CartItemModel> items;
+/// Represents a subset of the cart belonging to a specific restaurant.
+class CartGroup {
   final String restaurantId;
+  final String restaurantName;
+  final List<CartItemModel> items;
 
-  CartModel({
-    required this.items,
+  CartGroup({
     required this.restaurantId,
+    required this.restaurantName,
+    required this.items,
   });
 
-  double get totalPrice => items.fold(0, (sum, item) => sum + (item.itemPrice * item.quantity));
+  double get subtotal => items.fold(0.0, (acc, item) => acc + (item.itemPrice * item.quantity));
+  
+  // Logic for per-restaurant fees if needed (e.g., individual delivery fees)
+  double get deliveryFee => 50.0; 
+  double get tax => subtotal * 0.05; // 5% GST example
+
+  double get total => subtotal + deliveryFee + tax;
+}
+
+/// The entire cart containing multiple restaurant groups.
+class MasterCart {
+  final List<CartGroup> groups;
+
+  MasterCart({required this.groups});
+
+  double get grandSubtotal => groups.fold(0.0, (acc, group) => acc + group.subtotal);
+  double get totalDeliveryFee => groups.fold(0.0, (acc, group) => acc + group.deliveryFee);
+  double get totalTax => groups.fold(0.0, (acc, group) => acc + group.tax);
+  
+  double get grandTotal => grandSubtotal + totalDeliveryFee + totalTax;
+
+  bool get isEmpty => groups.isEmpty;
+  int get totalItemCount => groups.fold(0, (acc, group) => acc + group.items.length);
 }

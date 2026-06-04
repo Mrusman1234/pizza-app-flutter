@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
@@ -73,18 +74,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
 
       if (success) {
-        final user = authProvider.user;
-        if (user != null) {
-          if (user.role == 'admin') {
-            Navigator.pushReplacementNamed(context, RouteNames.adminDashboard);
-          } else if (user.role == 'rider') {
-            Navigator.pushReplacementNamed(context, RouteNames.riderDashboard);
-          } else {
-            Navigator.pushReplacementNamed(context, RouteNames.home);
-          }
-        } else {
-          Navigator.pushReplacementNamed(context, RouteNames.home);
-        }
+        authProvider.navigateBasedOnRole(context);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -103,18 +93,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
 
     if (success) {
-      final user = authProvider.user;
-      if (user != null) {
-        if (user.role == 'admin') {
-          Navigator.pushReplacementNamed(context, RouteNames.adminDashboard);
-        } else if (user.role == 'rider') {
-          Navigator.pushReplacementNamed(context, RouteNames.riderDashboard);
-        } else {
-          Navigator.pushReplacementNamed(context, RouteNames.home);
-        }
-      } else {
-        Navigator.pushReplacementNamed(context, RouteNames.home);
-      }
+      authProvider.navigateBasedOnRole(context);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -298,19 +277,20 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 10),
 
                   /// Admin Login Link
-                  Center(
-                    child: TextButton(
-                      onPressed: () => Navigator.pushNamed(context, RouteNames.adminLogin),
-                      child: Text(
-                        "Login as Administrator",
-                        style: TextStyle(
-                          color: AppColors.muted.withValues(alpha: 0.7),
-                          fontSize: 13,
-                          decoration: TextDecoration.underline,
+                  if (kIsWeb)
+                    Center(
+                      child: TextButton(
+                        onPressed: () => Navigator.pushNamed(context, RouteNames.adminLogin),
+                        child: Text(
+                          "Login as Administrator",
+                          style: TextStyle(
+                            color: AppColors.muted.withValues(alpha: 0.7),
+                            fontSize: 13,
+                            decoration: TextDecoration.underline,
+                          ),
                         ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),

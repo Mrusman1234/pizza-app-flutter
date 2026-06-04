@@ -4,6 +4,8 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/firestore_constants.dart';
 import '../../widgets/admin_sidebar.dart';
 import '../../services/firestore_service.dart';
+import '../../services/storage_service.dart';
+import '../../routes/route_names.dart';
 
 class RestaurantManagementScreen extends StatefulWidget {
   const RestaurantManagementScreen({super.key});
@@ -13,10 +15,7 @@ class RestaurantManagementScreen extends StatefulWidget {
 }
 
 class _RestaurantManagementScreenState extends State<RestaurantManagementScreen> {
-  @override
-  void initState() {
-    super.initState();
-  }
+  final FirestoreService _firestoreService = FirestoreService();
 
   void _showRestaurantDialog([Map<String, dynamic>? restaurant]) {
     final bool isEditing = restaurant != null;
@@ -25,242 +24,275 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
     final TextEditingController imageController = TextEditingController(text: restaurant?[FirestoreConstants.image]);
     final TextEditingController timeController = TextEditingController(text: restaurant?[FirestoreConstants.time]);
     final TextEditingController deliveryController = TextEditingController(text: restaurant?[FirestoreConstants.delivery]);
+    final TextEditingController latController = TextEditingController(text: restaurant?[FirestoreConstants.latitude]?.toString());
+    final TextEditingController lngController = TextEditingController(text: restaurant?[FirestoreConstants.longitude]?.toString());
+    final TextEditingController radiusController = TextEditingController(text: restaurant?[FirestoreConstants.deliveryRadius]?.toString() ?? '10.0');
+
+    Map<String, dynamic> hours = restaurant?['operatingHours'] ?? {
+      'monday': {'open': '09:00', 'close': '22:00'},
+      'tuesday': {'open': '09:00', 'close': '22:00'},
+      'wednesday': {'open': '09:00', 'close': '22:00'},
+      'thursday': {'open': '09:00', 'close': '22:00'},
+      'friday': {'open': '09:00', 'close': '23:00'},
+      'saturday': {'open': '09:00', 'close': '23:00'},
+      'sunday': {'open': '09:00', 'close': '22:00'},
+    };
+
+    bool isUploading = false;
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.card,
-        title: Text(isEditing ? 'Edit Store' : 'Add New Store', style: const TextStyle(color: Colors.white)),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: 'Store Name', labelStyle: TextStyle(color: AppColors.subtle)),
-              ),
-              TextField(
-                controller: descController,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: 'Description', labelStyle: TextStyle(color: AppColors.subtle)),
-              ),
-              TextField(
-                controller: imageController,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: 'Image URL', labelStyle: TextStyle(color: AppColors.subtle)),
-              ),
-              TextField(
-                controller: timeController,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: 'Delivery Time (e.g. 20-30 min)', labelStyle: TextStyle(color: AppColors.subtle)),
-              ),
-              TextField(
-                controller: deliveryController,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: 'Delivery Fee', labelStyle: TextStyle(color: AppColors.subtle)),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              minimumSize: const Size(100, 45),
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-            ),
-            onPressed: () async {
-              if (nameController.text.isEmpty) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Store name is required')));
-                }
-                return;
-              }
-              final String? adminId = FirebaseAuth.instance.currentUser?.uid;
-              final data = {
-                FirestoreConstants.name: nameController.text,
-                FirestoreConstants.description: descController.text,
-                FirestoreConstants.image: imageController.text,
-                FirestoreConstants.time: timeController.text,
-                FirestoreConstants.delivery: deliveryController.text,
-                FirestoreConstants.adminId: adminId,
-              };
-              if (isEditing) {
-                await FirestoreService().updateRestaurant(restaurant[FirestoreConstants.id], data);
-              } else {
-                await FirestoreService().addRestaurant(data);
-              }
-              if (context.mounted) Navigator.pop(context);
-            },
-            child: Text(isEditing ? 'Update' : 'Add'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showMenuItemDialog(String restaurantId, [Map<String, dynamic>? item]) {
-    final bool isEditing = item != null;
-    final TextEditingController nameController = TextEditingController(text: item?[FirestoreConstants.name]);
-    final TextEditingController descController = TextEditingController(text: item?[FirestoreConstants.description]);
-    final TextEditingController priceController = TextEditingController(text: item?[FirestoreConstants.price]?.toString());
-    final TextEditingController imageController = TextEditingController(text: item?[FirestoreConstants.image]);
-    final TextEditingController categoryController = TextEditingController(text: item?[FirestoreConstants.category]);
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.card,
-        title: Text(isEditing ? 'Edit Menu Item' : 'Add Menu Item', style: const TextStyle(color: Colors.white)),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: 'Item Name', labelStyle: TextStyle(color: AppColors.subtle)),
-              ),
-              TextField(
-                controller: descController,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: 'Description', labelStyle: TextStyle(color: AppColors.subtle)),
-              ),
-              TextField(
-                controller: priceController,
-                keyboardType: TextInputType.number,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: 'Price', labelStyle: TextStyle(color: AppColors.subtle)),
-              ),
-              TextField(
-                controller: imageController,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: 'Image URL', labelStyle: TextStyle(color: AppColors.subtle)),
-              ),
-              TextField(
-                controller: categoryController,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: 'Category', labelStyle: TextStyle(color: AppColors.subtle)),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              minimumSize: const Size(100, 45),
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-            ),
-            onPressed: () async {
-              if (nameController.text.isEmpty || priceController.text.isEmpty) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Name and Price are required')));
-                }
-                return;
-              }
-              final data = {
-                FirestoreConstants.name: nameController.text,
-                FirestoreConstants.description: descController.text,
-                FirestoreConstants.price: double.tryParse(priceController.text) ?? 0.0,
-                FirestoreConstants.image: imageController.text,
-                FirestoreConstants.category: categoryController.text,
-              };
-              if (isEditing) {
-                await FirestoreService().updateMenuItem(restaurantId, item[FirestoreConstants.id], data);
-              } else {
-                await FirestoreService().addMenuItem(restaurantId, data);
-              }
-              if (context.mounted) Navigator.pop(context);
-            },
-            child: Text(isEditing ? 'Update' : 'Add'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showMenuManager(Map<String, dynamic> restaurant) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.background,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.9,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (context, scrollController) => Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text("Menu: ${restaurant[FirestoreConstants.name]}", 
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
-                        overflow: TextOverflow.ellipsis),
-                  ),
-                  const SizedBox(width: 16),
-                  ElevatedButton.icon(
-                    onPressed: () => _showMenuItemDialog(restaurant[FirestoreConstants.id]),
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Add Item'),
-                    style: ElevatedButton.styleFrom(
-                      minimumSize: const Size(0, 40),
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => AlertDialog(
+          backgroundColor: AppColors.card,
+          title: Text(isEditing ? 'Edit Store' : 'Add New Store', style: const TextStyle(color: Colors.white)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GestureDetector(
+                  onTap: isUploading ? null : () async {
+                    setModalState(() => isUploading = true);
+                    final String? newUrl = await StorageService().pickAndUploadImage(
+                      'restaurants/${DateTime.now().millisecondsSinceEpoch}.jpg'
+                    );
+                    if (newUrl != null) {
+                      imageController.text = newUrl;
+                    }
+                    setModalState(() => isUploading = false);
+                  },
+                  child: Container(
+                    height: 120,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: AppColors.background,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.border),
                     ),
+                    child: isUploading 
+                      ? const Center(child: CircularProgressIndicator())
+                      : imageController.text.isNotEmpty 
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.network(imageController.text, fit: BoxFit.cover),
+                          )
+                        : const Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.add_a_photo, color: AppColors.primary, size: 32),
+                              SizedBox(height: 8),
+                              Text('Upload Store Image', style: TextStyle(color: AppColors.subtle, fontSize: 12)),
+                            ],
+                          ),
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: nameController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(labelText: 'Store Name', labelStyle: TextStyle(color: AppColors.subtle)),
+                ),
+                TextField(
+                  controller: descController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(labelText: 'Description', labelStyle: TextStyle(color: AppColors.subtle)),
+                ),
+                TextField(
+                  controller: timeController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(labelText: 'Delivery Time (e.g. 20-30 min)', labelStyle: TextStyle(color: AppColors.subtle)),
+                ),
+                TextField(
+                  controller: deliveryController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(labelText: 'Delivery Fee', labelStyle: TextStyle(color: AppColors.subtle)),
+                ),
+                const SizedBox(height: 16),
+                const Divider(color: AppColors.border),
+                const Text('Location & Geofencing', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: latController,
+                        keyboardType: TextInputType.number,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: const InputDecoration(labelText: 'Latitude', labelStyle: TextStyle(color: AppColors.subtle)),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextField(
+                        controller: lngController,
+                        keyboardType: TextInputType.number,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: const InputDecoration(labelText: 'Longitude', labelStyle: TextStyle(color: AppColors.subtle)),
+                      ),
+                    ),
+                  ],
+                ),
+                TextField(
+                  controller: radiusController,
+                  keyboardType: TextInputType.number,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(labelText: 'Delivery Radius (km)', labelStyle: TextStyle(color: AppColors.subtle)),
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: () => _showHoursDialog(context, hours, (newHours) {
+                    setModalState(() => hours = newHours);
+                  }),
+                  icon: const Icon(Icons.access_time_filled, size: 18),
+                  label: const Text('Configure Operating Hours'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    side: const BorderSide(color: AppColors.primary),
+                  ),
+                ),
+              ],
             ),
-            Expanded(
-              child: StreamBuilder<List<Map<String, dynamic>>>(
-                stream: FirestoreService().getMenuItems(restaurant[FirestoreConstants.id]),
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return Center(child: Text("Error: ${snapshot.error}", style: const TextStyle(color: AppColors.primary)));
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () async {
+                if (nameController.text.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Store name is required')));
+                  return;
+                }
+                final String? adminId = FirebaseAuth.instance.currentUser?.uid;
+                final data = {
+                  FirestoreConstants.name: nameController.text.trim(),
+                  FirestoreConstants.description: descController.text.trim(),
+                  FirestoreConstants.image: imageController.text.trim(),
+                  FirestoreConstants.time: timeController.text.trim(),
+                  FirestoreConstants.delivery: deliveryController.text.trim(),
+                  FirestoreConstants.adminId: adminId,
+                  FirestoreConstants.latitude: double.tryParse(latController.text),
+                  FirestoreConstants.longitude: double.tryParse(lngController.text),
+                  FirestoreConstants.deliveryRadius: double.tryParse(radiusController.text) ?? 10.0,
+                  'operatingHours': hours,
+                };
+                
+                try {
+                  if (isEditing) {
+                    await _firestoreService.updateRestaurant(restaurant[FirestoreConstants.id], data);
+                  } else {
+                    await _firestoreService.addRestaurant(data);
                   }
-                  if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-                  final items = snapshot.data ?? [];
-                  if (items.isEmpty) return const Center(child: Text("No menu items", style: TextStyle(color: AppColors.subtle)));
-                  
-                  return ListView.builder(
-                    controller: scrollController,
-                    itemCount: items.length,
-                    itemBuilder: (context, index) {
-                      final item = items[index];
-                      return ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: AppColors.border,
-                          backgroundImage: (item[FirestoreConstants.image] != null && item[FirestoreConstants.image].toString().isNotEmpty)
-                            ? NetworkImage(item[FirestoreConstants.image])
-                            : null,
-                          child: (item[FirestoreConstants.image] == null || item[FirestoreConstants.image].toString().isEmpty)
-                            ? const Icon(Icons.fastfood, color: AppColors.subtle)
-                            : null,
-                        ),
-                        title: Text(item[FirestoreConstants.name] ?? '', style: const TextStyle(color: Colors.white)),
-                        subtitle: Text("Rs. ${item[FirestoreConstants.price]}", style: const TextStyle(color: AppColors.subtle)),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(icon: const Icon(Icons.edit, color: Colors.white70), onPressed: () => _showMenuItemDialog(restaurant[FirestoreConstants.id], item)),
-                            IconButton(icon: const Icon(Icons.delete, color: AppColors.primary), onPressed: () => FirestoreService().deleteMenuItem(restaurant[FirestoreConstants.id], item[FirestoreConstants.id])),
-                          ],
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
+                  if (context.mounted) Navigator.pop(context);
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+                  }
+                }
+              },
+              child: Text(isEditing ? 'Update' : 'Add'),
             ),
           ],
         ),
       ),
     );
+  }
+
+  void _showHoursDialog(BuildContext context, Map<String, dynamic> currentHours, Function(Map<String, dynamic>) onSave) {
+    final Map<String, dynamic> workingHours = Map<String, dynamic>.from(currentHours);
+    final List<String> days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          backgroundColor: AppColors.card,
+          title: const Text('Operating Hours (24h format)', style: TextStyle(color: Colors.white)),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: days.length,
+              itemBuilder: (context, index) {
+                final day = days[index];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Row(
+                    children: [
+                      SizedBox(width: 80, child: Text(day.toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold))),
+                      Expanded(
+                        child: TextField(
+                          onChanged: (v) => workingHours[day]['open'] = v,
+                          controller: TextEditingController(text: workingHours[day]['open']),
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                          decoration: const InputDecoration(hintText: 'Open (09:00)', isDense: true),
+                        ),
+                      ),
+                      const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('-', style: TextStyle(color: Colors.white))),
+                      Expanded(
+                        child: TextField(
+                          onChanged: (v) => workingHours[day]['close'] = v,
+                          controller: TextEditingController(text: workingHours[day]['close']),
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                          decoration: const InputDecoration(hintText: 'Close (22:00)', isDense: true),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () {
+                onSave(workingHours);
+                Navigator.pop(context);
+              },
+              child: const Text('Save Hours'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteStore(Map<String, dynamic> restaurant) async {
+    final String id = restaurant[FirestoreConstants.id];
+    final String name = restaurant[FirestoreConstants.name] ?? 'Unnamed Store';
+    final String? imageUrl = restaurant[FirestoreConstants.image];
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: const Text('Delete Restaurant', style: TextStyle(color: Colors.white)),
+        content: Text('Are you sure you want to delete "$name"? This will permanently remove the store and its menu.', 
+            style: const TextStyle(color: AppColors.subtle)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await _firestoreService.deleteRestaurant(id);
+        if (imageUrl != null && imageUrl.isNotEmpty && imageUrl.contains('firebasestorage')) {
+          await StorageService().deleteFileByUrl(imageUrl);
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Restaurant deleted successfully')));
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to delete: $e'), backgroundColor: Colors.red));
+        }
+      }
+    }
   }
 
   @override
@@ -292,66 +324,26 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
                     _buildHeader(),
                     Expanded(
                       child: StreamBuilder<List<Map<String, dynamic>>>(
-                        stream: FirestoreService().getRestaurants(adminId: FirebaseAuth.instance.currentUser?.uid),
+                        stream: _firestoreService.getRestaurants(adminId: FirebaseAuth.instance.currentUser?.uid),
                         builder: (context, snapshot) {
-                          if (snapshot.hasError) {
-                            return Center(
-                              child: SingleChildScrollView(
-                                padding: const EdgeInsets.all(24),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Icon(Icons.error_outline, size: 48, color: AppColors.primary),
-                                    const SizedBox(height: 16),
-                                    Text("Error: ${snapshot.error}", style: const TextStyle(color: Colors.white), textAlign: TextAlign.center),
-                                    const SizedBox(height: 16),
-                                    ElevatedButton(
-                                      onPressed: () => setState(() {}),
-                                      child: const Text("Retry"),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          }
                           if (snapshot.connectionState == ConnectionState.waiting) {
                             return const Center(child: CircularProgressIndicator());
                           }
-
                           final restaurants = snapshot.data ?? [];
-
                           if (restaurants.isEmpty) {
                             return _buildEmptyState();
                           }
 
-                          return LayoutBuilder(
-                            builder: (context, constraints) {
-                              int crossAxisCount = 3;
-                              if (constraints.maxWidth < 650) {
-                                crossAxisCount = 1;
-                              } else if (constraints.maxWidth < 1100) {
-                                crossAxisCount = 2;
-                              }
-                              
-                              final double paddingAndSpacing = 48.0 + (crossAxisCount - 1) * 24.0;
-                              final double cardWidth = (constraints.maxWidth - paddingAndSpacing) / crossAxisCount;
-                              final double childAspectRatio = cardWidth / 370.0;
-
-                              return GridView.builder(
-                                padding: const EdgeInsets.all(24),
-                                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: crossAxisCount,
-                                  crossAxisSpacing: 24,
-                                  mainAxisSpacing: 24,
-                                  childAspectRatio: childAspectRatio > 0.55 ? childAspectRatio : 0.55,
-                                ),
-                                itemCount: restaurants.length,
-                                itemBuilder: (context, index) {
-                                  final restaurant = restaurants[index];
-                                  return _buildRestaurantCard(restaurant);
-                                },
-                              );
-                            },
+                          return GridView.builder(
+                            padding: const EdgeInsets.all(24),
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              crossAxisSpacing: 24,
+                              mainAxisSpacing: 24,
+                              childAspectRatio: 1.2,
+                            ),
+                            itemCount: restaurants.length,
+                            itemBuilder: (context, index) => _buildRestaurantCard(restaurants[index]),
                           );
                         },
                       ),
@@ -374,65 +366,30 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
         color: AppColors.background,
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final bool isCompact = constraints.maxWidth < 600;
-          
-          return Row(
-            children: [
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Text(
-                      "Store Management",
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      "Add, edit and manage your restaurant locations",
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: AppColors.subtle,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              isCompact 
-                ? IconButton(
-                    onPressed: () => _showRestaurantDialog(),
-                    icon: const Icon(Icons.add_circle, color: AppColors.primary, size: 32),
-                  )
-                : ElevatedButton.icon(
-                    onPressed: () => _showRestaurantDialog(),
-                    icon: const Icon(Icons.add, size: 18, color: Colors.white),
-                    label: const Text("Add New Store", style: TextStyle(color: Colors.white)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                      minimumSize: const Size(0, 48),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-            ],
-          );
-        },
+      child: Row(
+        children: [
+          const Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("Store Management", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
+                Text("Add, edit and manage your restaurant locations", style: TextStyle(fontSize: 14, color: AppColors.subtle)),
+              ],
+            ),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => _showRestaurantDialog(),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text("Add New Store"),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildRestaurantCard(Map<String, dynamic> restaurant) {
+    final String restaurantId = restaurant[FirestoreConstants.id];
     return Container(
       decoration: BoxDecoration(
         color: AppColors.card,
@@ -442,98 +399,38 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            child: Image.network(
-              restaurant[FirestoreConstants.image] ?? 'https://via.placeholder.com/300x150',
-              height: 150,
-              width: double.infinity,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => Container(
-                height: 150,
-                color: AppColors.border,
-                child: const Icon(Icons.broken_image, color: AppColors.subtle, size: 40),
+          Stack(
+            children: [
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                child: Image.network(
+                  restaurant[FirestoreConstants.image] ?? 'https://via.placeholder.com/300x150',
+                  height: 150, width: double.infinity, fit: BoxFit.cover,
+                ),
               ),
-            ),
+              Positioned(
+                top: 12, right: 12,
+                child: Row(
+                  children: [
+                    IconButton(icon: const Icon(Icons.edit, color: Colors.white), onPressed: () => _showRestaurantDialog(restaurant)),
+                    IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => _confirmDeleteStore(restaurant)),
+                  ],
+                ),
+              ),
+            ],
           ),
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        restaurant[FirestoreConstants.name] ?? 'Unnamed Store',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: AppColors.green.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.star, color: Colors.amber, size: 14),
-                          const SizedBox(width: 4),
-                          Text(
-                            (restaurant[FirestoreConstants.rating] ?? 0.0).toString(),
-                            style: const TextStyle(color: AppColors.green, fontWeight: FontWeight.bold, fontSize: 12),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                Text(restaurant[FirestoreConstants.name] ?? 'Unnamed Store', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
                 const SizedBox(height: 8),
-                Text(
-                  restaurant[FirestoreConstants.description] ?? 'No description available.',
-                  style: const TextStyle(color: AppColors.subtle, fontSize: 13),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                Text(restaurant[FirestoreConstants.description] ?? '', style: const TextStyle(color: AppColors.subtle, fontSize: 13)),
                 const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _buildInfoItem(Icons.access_time, restaurant[FirestoreConstants.time] ?? '20-30 min'),
-                    const SizedBox(width: 8),
-                    _buildInfoItem(Icons.delivery_dining, restaurant[FirestoreConstants.delivery] ?? 'Free'),
-                  ],
-                ),
-                const Divider(height: 32, color: AppColors.border),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => _showMenuManager(restaurant),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: AppColors.border),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        child: const Text("Menu"),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => _showRestaurantDialog(restaurant),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: AppColors.border),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        child: const Text("Edit"),
-                      ),
-                    ),
-                  ],
+                ElevatedButton(
+                  onPressed: () => Navigator.pushNamed(context, RouteNames.adminStoreProducts, arguments: {'id': restaurantId, 'name': restaurant[FirestoreConstants.name]}),
+                  child: const Text("Manage Products"),
                 ),
               ],
             ),
@@ -543,39 +440,7 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
     );
   }
 
-  Widget _buildInfoItem(IconData icon, String text) {
-    return Flexible(
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: AppColors.primary),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Text(
-              text, 
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.store_outlined, size: 64, color: AppColors.muted),
-          const SizedBox(height: 16),
-          const Text("No stores found", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-          const Text("Start by adding a new restaurant to the platform.", style: TextStyle(color: AppColors.subtle)),
-        ],
-      ),
-    );
+    return const Center(child: Text("No stores found", style: TextStyle(color: Colors.white)));
   }
 }
-
-

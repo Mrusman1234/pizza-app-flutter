@@ -14,6 +14,7 @@ import 'providers/auth_provider.dart';
 import 'providers/cart_provider.dart';
 import 'providers/restaurant_provider.dart';
 import 'providers/theme_provider.dart';
+import 'providers/connection_provider.dart';
 import 'providers/order_provider.dart';
 import 'providers/deals_provider.dart';
 import 'providers/rider_provider.dart';
@@ -21,12 +22,14 @@ import 'providers/notification_provider.dart';
 import 'providers/commission_provider.dart';
 import 'providers/pizza_provider.dart';
 import 'providers/restaurant_admin_provider.dart';
+import 'providers/wallet_provider.dart';
 import 'routes/app_routes.dart';
 import 'routes/route_names.dart';
 import 'core/constants/app_strings.dart';
 
 import 'services/auth_service.dart';
 import 'services/notification_service.dart';
+import 'widgets/common/connectivity_wrapper.dart';
 
 /// Global key — allows navigation from anywhere (e.g. NotificationService)
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -95,6 +98,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => CartProvider()),
         ChangeNotifierProvider(create: (_) => RestaurantProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => ConnectionProvider()),
         ChangeNotifierProvider(create: (_) => OrderProvider()),
         ChangeNotifierProvider(create: (_) => DealsProvider()),
         ChangeNotifierProvider(create: (_) => RiderProvider()),
@@ -102,6 +106,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => CommissionProvider()),
         ChangeNotifierProvider(create: (_) => PizzaProvider()),
         ChangeNotifierProvider(create: (_) => RestaurantAdminProvider()),
+        ChangeNotifierProvider(create: (_) => WalletProvider()),
       ],
       child: const MyApp(),
     ),
@@ -127,6 +132,9 @@ class MyApp extends StatelessWidget {
       supportedLocales: AppLocalizations.supportedLocales,
       initialRoute: RouteNames.splash,
       routes: AppRoutes.routes,
+      builder: (context, child) {
+        return ConnectivityWrapper(child: child!);
+      },
     );
   }
 }

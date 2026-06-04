@@ -1,91 +1,141 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper functions
+
+    // ── helper functions ───────────────────────────────────────────────────
+
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isAdmin() {
-      return isSignedIn() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasRole(role) {
+      return isSignedIn() && getUserData().role == role;
+    }
+
+    function isSuperAdmin() {
+      return hasRole('admin');
+    }
+
+    function isRestaurantAdmin(restaurantId) {
+      return hasRole('restaurant_admin') && getUserData().assignedRestaurantId == restaurantId;
+    }
+
+    function isRider() {
+      return hasRole('rider');
     }
 
     function isOwner(userId) {
       return request.auth.uid == userId;
     }
 
-    // Rules for the users collection
-    match /users/{userId} {
-      allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
-      allow write: if isSignedIn() && (isOwner(userId) || isAdmin());
+    // ── user rules ─────────────────────────────────────────────────────────
 
-      // Cart subcollection
+    match /users/{userId} {
+      allow read: if isSignedIn() && (isOwner(userId) || isSuperAdmin());
+
+      // Prevent users from changing their own role or status
+      allow update: if isSignedIn() && isOwner(userId)
+        && !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['role', 'isBlocked', 'assignedRestaurantId']);
+
+      allow create, delete: if isSuperAdmin();
+
       match /cart/{cartId} {
-        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read, write: if isSignedIn() && isOwner(userId);
       }
 
-      // Addresses subcollection
       match /addresses/{addressId} {
-        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read, write: if isSignedIn() && isOwner(userId);
       }
     }
 
-    // Rules for the restaurants collection
-    match /restaurants/{restaurantId} {
-      allow read: if true; // Publicly readable for customers
-      allow create: if isAdmin();
-      allow update, delete: if isAdmin() &&
-        (resource.data.adminId == request.auth.uid || !('adminId' in resource.data));
+    // ── restaurant rules ───────────────────────────────────────────────────
 
-      // Menu items subcollection
+    match /restaurants/{restaurantId} {
+      allow read: if true;
+      allow create, delete: if isSuperAdmin();
+      allow update: if isSuperAdmin() || isRestaurantAdmin(restaurantId);
+
       match /menu/{menuId} {
         allow read: if true;
-        allow write: if isAdmin() &&
-          get(/databases/$(database)/documents/restaurants/$(restaurantId)).data.adminId == request.auth.uid;
+        allow write: if isSuperAdmin() || isRestaurantAdmin(restaurantId);
       }
     }
 
-    // Rules for the orders collection
+    // ── order rules (the core fix) ─────────────────────────────────────────
+
+    // Finalized orders: CANNOT BE CREATED BY CLIENT
     match /orders/{orderId} {
       allow read: if isSignedIn() && (
-        request.auth.uid == resource.data.userId ||
-        request.auth.uid == resource.data.adminId ||
-        isAdmin()
+        isOwner(resource.data.userId) ||
+        isSuperAdmin() ||
+        isRestaurantAdmin(resource.data.restaurantId) ||
+        (isRider() && resource.data.riderId == request.auth.uid) ||
+        (isRider() && resource.data.status == 'Pending') // Riders can see available orders
       );
-      allow create: if isSignedIn();
+
+      // ONLY backend / Cloud Functions can create finalized orders
+      allow create: if false;
+
       allow update: if isSignedIn() && (
-        request.auth.uid == resource.data.userId ||
-        request.auth.uid == resource.data.adminId ||
-        isAdmin()
+        // 1. Super Admin can do anything
+        isSuperAdmin() ||
+
+        // 2. Restaurant Admin can update status to Confirmed/Preparing/Cancelled
+        (isRestaurantAdmin(resource.data.restaurantId) &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'preparingAt', 'cancelledAt'])) ||
+
+        // 3. Riders can update status to On the way/Delivered and self-assign
+        (isRider() &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'riderId', 'riderName', 'riderPhone', 'onTheWayAt', 'deliveredAt'])) ||
+
+        // 4. Customers can ONLY update rating after delivery
+        (isOwner(resource.data.userId) && resource.data.status == 'Delivered' &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['foodRating', 'riderRating', 'review', 'ratingSubmitted', 'ratedAt']))
       );
+
+      allow delete: if isSuperAdmin();
     }
 
-    // Rules for deals
+    // New collection for order requests (Drafts)
+    match /order_requests/{requestId} {
+      allow create: if isSignedIn() && isOwner(request.resource.data.userId)
+        && request.resource.data.keys().hasAll(['userId', 'items', 'address'])
+        // Ensure they don't try to sneak in a finalized status or price
+        && !('totalAmount' in request.resource.data);
+      allow read: if isSignedIn() && (isOwner(resource.data.userId) || isSuperAdmin());
+    }
+
+    // ── other collections ──────────────────────────────────────────────────
+
     match /deals/{dealId} {
       allow read: if true;
-      allow write: if isAdmin() &&
-        (resource == null || resource.data.adminId == request.auth.uid);
+      allow write: if isSuperAdmin();
     }
 
-    // Rules for promotions
     match /promotions/{promotionId} {
       allow read: if true;
-      allow write: if isAdmin() &&
-        (resource == null || resource.data.adminId == request.auth.uid);
+      allow write: if isSuperAdmin();
     }
 
-    // Rules for notifications
     match /notifications/{notificationId} {
-      allow read: if isSignedIn() &&
-        (request.auth.uid == resource.data.userId || request.auth.uid == resource.data.adminId);
-      allow create: if isSignedIn();
-      allow update, delete: if isAdmin() && resource.data.adminId == request.auth.uid;
+      allow read: if isSignedIn() && (isOwner(resource.data.userId) || isSuperAdmin());
+      allow create: if isSignedIn(); // Allow app to trigger notifications for requests
+      allow delete: if isSuperAdmin() || (resource.data.userId == request.auth.uid);
     }
 
-    // Commissions collection
     match /commissions/{commId} {
-      allow read, write: if isAdmin();
+      allow read, write: if isSuperAdmin();
+    }
+
+    match /checkouts/{checkoutId} {
+      allow read: if isSignedIn() && (isOwner(resource.data.userId) || isSuperAdmin());
+      // Handled by payment webhook or functions
+      allow write: if false;
     }
   }
 }

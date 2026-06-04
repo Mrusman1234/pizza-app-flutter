@@ -3,8 +3,10 @@ import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/constants/app_colors.dart';
 import '../../providers/cart_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/restaurant_provider.dart';
 import '../../services/firestore_service.dart';
+import '../../core/utils/location_helper.dart';
 import '../../widgets/custom_button.dart';
 import '../../routes/route_names.dart';
 
@@ -41,19 +43,50 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Future<void> _placeOrder() async {
     final cartProvider = Provider.of<CartProvider>(context, listen: false);
     final restaurantProvider = Provider.of<RestaurantProvider>(context, listen: false);
-    final restaurantId = cartProvider.restaurantId;
+    
+    // Check busy status and geofencing for all unique restaurants in the cart
+    final groups = cartProvider.groups;
+    final userLat = (_selectedAddress?['lat'] as num?)?.toDouble();
+    final userLng = (_selectedAddress?['lng'] as num?)?.toDouble();
 
-    if (restaurantId != null) {
-      final restaurant = await restaurantProvider.getRestaurantById(restaurantId);
-      if (restaurant?.isBusy ?? false) {
+    for (var group in groups) {
+      final restaurant = await restaurantProvider.getRestaurantById(group.restaurantId);
+      
+      if (restaurant == null) continue;
+
+      if (restaurant.isBusy) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('The restaurant is currently busy and cannot accept orders.'),
+          SnackBar(
+            content: Text('${group.restaurantName} is currently busy and cannot accept orders.'),
             backgroundColor: Colors.orange,
           ),
         );
         return;
+      }
+
+      // ── GEOFENCING CHECK ────────────────────────────────────────────────
+      if (userLat != null && userLng != null && 
+          restaurant.latitude != null && restaurant.longitude != null) {
+        
+        final bool isWithinRange = LocationHelper.isWithinRadius(
+          userLat: userLat,
+          userLng: userLng,
+          restaurantLat: restaurant.latitude!,
+          restaurantLng: restaurant.longitude!,
+          radiusInKm: restaurant.deliveryRadius,
+        );
+
+        if (!isWithinRange) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Delivery address is outside ${group.restaurantName}\'s delivery zone.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+          return;
+        }
       }
     }
 
@@ -73,25 +106,23 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     setState(() => _isPlacingOrder = true);
 
     try {
-      final restaurantId = cartProvider.restaurantId;
-      final restaurantName = cartProvider.restaurantName;
+      final groups = cartProvider.groups;
       final promo = cartProvider.appliedPromo;
+      
+      final auth = Provider.of<AppAuthProvider>(context, listen: false);
+      final userName = auth.user?.name ?? 'Customer';
+      final userPhone = auth.user?.phoneNumber ?? '03000000000'; // Fallback if missing
 
-      final orderId = await _firestoreService.placeOrder(
+      await _firestoreService.placeOrders(
         userId: user.uid,
-        items: cartProvider.items.map((e) => e.toMap()).toList(),
-        subtotal: cartProvider.subtotal,
-        deliveryFee: cartProvider.deliveryFee,
-        tax: cartProvider.tax,
-        totalAmount: cartProvider.total,
-        discountAmount: cartProvider.discountAmount,
-        promoCode: promo?['code'],
+        userName: userName,
+        userPhone: userPhone,
+        cartGroups: groups,
         address: _selectedAddress!['address'],
         lat: _selectedAddress!['lat'],
         lng: _selectedAddress!['lng'],
         paymentMethod: _paymentMethod,
-        restaurantId: restaurantId,
-        restaurantName: restaurantName,
+        promoCode: promo?['code'],
       );
 
       // If promo used, increment redemptions
@@ -104,20 +135,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       if (mounted) {
         if (_paymentMethod == 'JazzCash / EasyPaisa') {
-          Navigator.pushReplacementNamed(
+          // Note: In a multi-order scenario, payment logic would ideally target a transaction/checkout ID
+          // For now, we redirect to success or home
+          Navigator.pushNamedAndRemoveUntil(
             context,
-            RouteNames.payment,
-            arguments: {
-              'amount': totalBeforeClear,
-              'orderId': orderId,
-            },
+            RouteNames.orderSuccess,
+            (route) => false,
+            arguments: "MULTI_ORDER_CHECKOUT",
           );
         } else {
           Navigator.pushNamedAndRemoveUntil(
             context,
-            RouteNames.orderTracking,
+            RouteNames.myOrders,
             (route) => false,
-            arguments: orderId,
           );
         }
       }

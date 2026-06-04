@@ -10,6 +10,9 @@ class FirestoreConstants {
   static const String promotions = 'promotions';
   static const String deals = 'deals';
   static const String commissions = 'commissions';
+  static const String wallets = 'wallets';
+  static const String walletTransactions = 'transactions';
+  static const String appConfig = 'app_config';
 
   // Common Fields
   static const String id = 'id';
@@ -48,6 +51,9 @@ class FirestoreConstants {
   // Restaurant Fields
   static const String time = 'time';
   static const String delivery = 'delivery';
+  static const String latitude = 'latitude';
+  static const String longitude = 'longitude';
+  static const String deliveryRadius = 'deliveryRadius';
   static const String isOnDeal = 'isOnDeal';
   static const String isBusy = 'isBusy';
   static const String commissionRate = 'commissionRate';

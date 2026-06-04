@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/foundation.dart';
 import '../../providers/auth_provider.dart';
 import '../../routes/route_names.dart';
 import '../../core/constants/app_strings.dart';
@@ -30,6 +33,68 @@ class _SplashScreenState extends State<SplashScreen> {
     super.dispose();
   }
 
+  Future<void> _checkAppVersion() async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('app_config').doc('settings').get();
+      if (doc.exists) {
+        final data = doc.data()!;
+        final minVersion = data['min_version'] ?? '1.0.0';
+        const currentVersion = '1.0.0'; // Hardcoded for this build
+
+        if (_isUpdateRequired(currentVersion, minVersion)) {
+          _showUpdateDialog();
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint("Version check failed, continuing: $e");
+    }
+    _checkLoginStatus();
+  }
+
+  bool _isUpdateRequired(String current, String minimum) {
+    List<int> cur = current.split('.').map(int.parse).toList();
+    List<int> min = minimum.split('.').map(int.parse).toList();
+    for (int i = 0; i < 3; i++) {
+      if (cur[i] < min[i]) return true;
+      if (cur[i] > min[i]) return false;
+    }
+    return false;
+  }
+
+  void _showUpdateDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text('Update Required', style: TextStyle(color: Colors.white)),
+        content: const Text('A new version of the app is available. Please update to continue using our services.', style: TextStyle(color: Colors.white70)),
+        actions: [
+          ElevatedButton(
+            onPressed: () => _launchStore(),
+            child: const Text('Update Now'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _launchStore() async {
+    final playStoreUrl = Uri.parse('market://details?id=pk.vehari.app_multi_restaurant');
+    final appleStoreUrl = Uri.parse('https://apps.apple.com/app/idYOUR_APP_ID');
+    
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      if (await canLaunchUrl(playStoreUrl)) {
+        await launchUrl(playStoreUrl);
+      } else {
+        await launchUrl(Uri.parse('https://play.google.com/store/apps/details?id=pk.vehari.app_multi_restaurant'));
+      }
+    } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+      await launchUrl(appleStoreUrl);
+    }
+  }
+
   Future<void> _checkLoginStatus() async {
     debugPrint("Splash: Reached 100%, checking login status...");
     try {
@@ -56,17 +121,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
             if (!mounted) return;
 
-            debugPrint("Splash: User role is ${user.role}. Navigating...");
-            if (user.role == 'admin') {
-              Navigator.pushReplacementNamed(context, RouteNames.adminDashboard);
-            } else if (user.role == 'restaurant_admin') {
-              // ── NEW: route child admins to their dedicated dashboard ──────────────
-              Navigator.pushReplacementNamed(context, RouteNames.restaurantAdminDashboard);
-            } else if (user.role == 'rider') {
-              Navigator.pushReplacementNamed(context, RouteNames.riderDashboard);
-            } else {
-              Navigator.pushReplacementNamed(context, RouteNames.home);
-            }
+            authProvider.navigateBasedOnRole(context);
           } else {
             debugPrint("Splash: No user data found. Navigating to Home...");
             Navigator.pushReplacementNamed(context, RouteNames.home);
@@ -92,7 +147,7 @@ class _SplashScreenState extends State<SplashScreen> {
           if (progress >= 1.0) {
             progress = 1.0;
             timer.cancel();
-            _checkLoginStatus();
+            _checkAppVersion();
           }
         });
       }

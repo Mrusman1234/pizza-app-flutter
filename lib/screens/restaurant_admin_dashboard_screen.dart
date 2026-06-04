@@ -20,6 +20,8 @@ class RestaurantAdminDashboardScreen extends StatefulWidget {
 class _RestaurantAdminDashboardScreenState
     extends State<RestaurantAdminDashboardScreen> {
   bool _showRevenueChart = true;
+  int _lastPendingCount = 0;
+
   @override
   void initState() {
     super.initState();
@@ -42,6 +44,16 @@ class _RestaurantAdminDashboardScreenState
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<RestaurantAdminProvider>();
+
+    // ── NEW ORDER ALERT LOGIC ──────────────────────────────────
+    if (provider.pendingOrdersCount > _lastPendingCount) {
+      _lastPendingCount = provider.pendingOrdersCount;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showNewOrderAlert();
+      });
+    } else {
+      _lastPendingCount = provider.pendingOrdersCount;
+    }
 
     if (provider.isLoading) {
       return const Scaffold(
@@ -86,6 +98,33 @@ class _RestaurantAdminDashboardScreenState
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  void _showNewOrderAlert() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: const [
+            Icon(Icons.notification_important, color: Colors.white),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                '🔥 NEW ORDER ALERT! Check your pending orders immediately.',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.orange.shade800,
+        duration: const Duration(seconds: 15),
+        behavior: SnackBarBehavior.floating,
+        action: SnackBarAction(
+          label: 'OPEN',
+          textColor: Colors.white,
+          onPressed: () => Navigator.pushNamed(context, RouteNames.restaurantAdminOrders),
         ),
       ),
     );
@@ -406,6 +445,8 @@ class _RestaurantAdminDashboardScreenState
       if (admin.canManageMenu)
         _ActionItem('Manage Menu', Icons.restaurant_menu_rounded, AppColors.green,
             RouteNames.restaurantAdminMenu),
+      _ActionItem('Wallet', Icons.account_balance_wallet_rounded, Colors.orange,
+            RouteNames.wallet),
       if (admin.canViewStats)
         _ActionItem('Audit Logs', Icons.history_rounded, AppColors.subtle,
             RouteNames.restaurantAdminAuditLogs),

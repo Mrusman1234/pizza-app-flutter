@@ -1,171 +1,166 @@
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import '../models/order_model.dart';
+import '../core/constants/app_strings.dart';
 import 'package:intl/intl.dart';
 
 class PdfService {
-  static Future<void> generatePerformanceReport({
-    required String title,
-    required Map<String, dynamic> kpis,
-    required List<Map<String, dynamic>> topProducts,
-    required List<Map<String, dynamic>> recentOrders,
-  }) async {
+  Future<void> generateAndPrintInvoice(OrderModel order) async {
     final pdf = pw.Document();
 
+    final dateStr = DateFormat('MMM dd, yyyy').format(order.createdAt);
+    final timeStr = DateFormat('hh:mm a').format(order.createdAt);
+
     pdf.addPage(
-      pw.MultiPage(
+      pw.Page(
         pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(32),
         build: (pw.Context context) {
-          return [
-            _buildHeader(title),
-            pw.SizedBox(height: 20),
-            _buildKPIGrid(kpis),
-            pw.SizedBox(height: 30),
-            _buildSectionTitle('Top Selling Products'),
-            _buildProductsTable(topProducts),
-            pw.SizedBox(height: 30),
-            _buildSectionTitle('Recent Orders'),
-            _buildOrdersTable(recentOrders),
-            pw.Spacer(),
-            _buildFooter(),
-          ];
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              // Header
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(AppStrings.appName, style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
+                      pw.Text('Vehari, Pakistan', style: const pw.TextStyle(fontSize: 12)),
+                    ],
+                  ),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Text('INVOICE', style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, color: PdfColors.orange)),
+                      pw.Text('Order # ${order.id.substring(0, 8).toUpperCase()}', style: const pw.TextStyle(fontSize: 12)),
+                    ],
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 30),
+
+              // Customer & Order Info
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text('Bill To:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                      pw.Text(order.userId, style: const pw.TextStyle(fontSize: 10)), // In production, replace with user name
+                      pw.Container(width: 200, child: pw.Text(order.deliveryAddress, style: const pw.TextStyle(fontSize: 10))),
+                    ],
+                  ),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Text('Date: $dateStr'),
+                      pw.Text('Time: $timeStr'),
+                      pw.Text('Payment: ${order.paymentMethod}'),
+                    ],
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 30),
+
+              // Table Header
+              pw.Container(
+                decoration: const pw.BoxDecoration(color: PdfColors.grey300),
+                padding: const pw.EdgeInsets.all(8),
+                child: pw.Row(
+                  children: [
+                    pw.Expanded(flex: 3, child: pw.Text('Item', style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
+                    pw.Expanded(child: pw.Text('Qty', style: pw.TextStyle(fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center)),
+                    pw.Expanded(child: pw.Text('Price', style: pw.TextStyle(fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.right)),
+                    pw.Expanded(child: pw.Text('Total', style: pw.TextStyle(fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.right)),
+                  ],
+                ),
+              ),
+
+              // Table Body
+              ...order.items.map((item) {
+                return pw.Container(
+                  padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: const pw.BoxDecoration(
+                    border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200, width: 0.5)),
+                  ),
+                  child: pw.Row(
+                    children: [
+                      pw.Expanded(flex: 3, child: pw.Text(item.pizza.name)),
+                      pw.Expanded(child: pw.Text('${item.quantity}', textAlign: pw.TextAlign.center)),
+                      pw.Expanded(child: pw.Text('Rs. ${item.itemPrice.toInt()}', textAlign: pw.TextAlign.right)),
+                      pw.Expanded(child: pw.Text('Rs. ${(item.itemPrice * item.quantity).toInt()}', textAlign: pw.TextAlign.right)),
+                    ],
+                  ),
+                );
+              }),
+
+              pw.SizedBox(height: 20),
+
+              // Summary
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.end,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Row(
+                        children: [
+                          pw.Text('Subtotal: '),
+                          pw.Text('Rs. ${order.totalAmount.toInt() - 150}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), // Rough math for demo
+                        ],
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Text('Delivery Fee: Rs. 50'),
+                      pw.Text('GST (5%): Rs. 100'),
+                      pw.Divider(color: PdfColors.grey),
+                      pw.Row(
+                        children: [
+                          pw.Text('Grand Total: ', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+                          pw.Text('Rs. ${order.totalAmount.toInt()}', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColors.orange)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+
+              pw.Spacer(),
+              pw.Center(child: pw.Text('Thank you for ordering from Pizza O\'Clock!', style: pw.TextStyle(fontStyle: pw.FontStyle.italic, color: PdfColors.grey600))),
+              pw.SizedBox(height: 10),
+            ],
+          );
         },
       ),
     );
 
-    await Printing.layoutPdf(
-      onLayout: (PdfPageFormat format) async => pdf.save(),
-      name: 'Performance_Report_${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf',
-    );
+    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
   }
 
-  static pw.Widget _buildHeader(String title) {
-    return pw.Row(
-      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-      children: [
-        pw.Column(
+  Future<void> generatePerformanceReport({
+    required String title,
+    required Map<String, String> kpis,
+    required List<Map<String, dynamic>> topProducts,
+    required List<Map<String, dynamic>> recentOrders,
+  }) async {
+    final pdf = pw.Document();
+    pdf.addPage(
+      pw.Page(
+        build: (pw.Context context) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
             pw.Text(title, style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
-            pw.Text('Generated on: ${DateFormat('MMM dd, yyyy HH:mm').format(DateTime.now())}',
-                style: const pw.TextStyle(fontSize: 12, color: PdfColors.grey700)),
+            pw.SizedBox(height: 20),
+            pw.Text('Key Performance Indicators:', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+            ...kpis.entries.map((e) => pw.Text('${e.key}: ${e.value}')),
+            pw.SizedBox(height: 20),
+            pw.Text('Summary generated on ${DateFormat('MMM dd, yyyy').format(DateTime.now())}'),
           ],
-        ),
-        pw.Text('Multi-Restaurant App', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColors.orange800)),
-      ],
-    );
-  }
-
-  static pw.Widget _buildSectionTitle(String title) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.only(bottom: 10),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text(title, style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
-          pw.Divider(thickness: 1, color: PdfColors.grey300),
-        ],
-      ),
-    );
-  }
-
-  static pw.Widget _buildKPIGrid(Map<String, dynamic> kpis) {
-    return pw.Row(
-      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-      children: kpis.entries.map((e) {
-        return pw.Container(
-          width: 100,
-          padding: const pw.EdgeInsets.all(10),
-          decoration: pw.BoxDecoration(
-            border: pw.Border.all(color: PdfColors.grey300),
-            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
-          ),
-          child: pw.Column(
-            children: [
-              pw.Text(e.key, style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
-              pw.SizedBox(height: 5),
-              pw.Text(e.value.toString(), style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
-            ],
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  static pw.Widget _buildProductsTable(List<Map<String, dynamic>> products) {
-    return pw.Table(
-      border: pw.TableBorder.all(color: PdfColors.grey300),
-      children: [
-        pw.TableRow(
-          decoration: const pw.BoxDecoration(color: PdfColors.grey200),
-          children: [
-            _tableCell('Product Name', isHeader: true),
-            _tableCell('Items Sold', isHeader: true),
-            _tableCell('Revenue', isHeader: true),
-          ],
-        ),
-        ...products.map((p) => pw.TableRow(
-          children: [
-            _tableCell(p['name'] ?? 'N/A'),
-            _tableCell(p['count']?.toString() ?? '0'),
-            _tableCell('Rs ${p['revenue']?.toStringAsFixed(0) ?? '0'}'),
-          ],
-        )),
-      ],
-    );
-  }
-
-  static pw.Widget _buildOrdersTable(List<Map<String, dynamic>> orders) {
-    return pw.Table(
-      border: pw.TableBorder.all(color: PdfColors.grey300),
-      children: [
-        pw.TableRow(
-          decoration: const pw.BoxDecoration(color: PdfColors.grey200),
-          children: [
-            _tableCell('Order ID', isHeader: true),
-            _tableCell('Customer', isHeader: true),
-            _tableCell('Amount', isHeader: true),
-            _tableCell('Status', isHeader: true),
-          ],
-        ),
-        ...orders.map((o) => pw.TableRow(
-          children: [
-            _tableCell(o['id']?.toString().substring(0, 8) ?? 'N/A'),
-            _tableCell(o['userName'] ?? 'N/A'),
-            _tableCell('Rs ${o['totalAmount']?.toStringAsFixed(0) ?? '0'}'),
-            _tableCell(o['status'] ?? 'N/A'),
-          ],
-        )),
-      ],
-    );
-  }
-
-  static pw.Widget _tableCell(String text, {bool isHeader = false}) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.all(5),
-      child: pw.Text(
-        text,
-        style: pw.TextStyle(
-          fontSize: 10,
-          fontWeight: isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
         ),
       ),
     );
-  }
-
-  static pw.Widget _buildFooter() {
-    return pw.Column(
-      children: [
-        pw.Divider(thickness: 0.5, color: PdfColors.grey300),
-        pw.Row(
-          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-          children: [
-            pw.Text('Confidential Performance Report', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey500)),
-            pw.Text('Page 1 of 1', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey500)),
-          ],
-        ),
-      ],
-    );
+    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
   }
 }

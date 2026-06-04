@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/constants/app_colors.dart';
 import '../../models/deal_model.dart';
 import '../../models/pizza_model.dart';
@@ -8,6 +9,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/cart_provider.dart';
 import '../../providers/deals_provider.dart';
 import '../../routes/route_names.dart';
+import '../shimmer_loader.dart';
 
 class SpecialDealsTodaySection extends StatefulWidget {
   const SpecialDealsTodaySection({super.key});
@@ -50,9 +52,18 @@ class _SpecialDealsTodaySectionState extends State<SpecialDealsTodaySection> {
     final dealsProvider = context.watch<DealsProvider>();
 
     if (dealsProvider.isLoading && dealsProvider.deals.isEmpty) {
-      return const SizedBox(
-        height: 250,
-        child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+      return SizedBox(
+        height: 220,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          itemCount: 3,
+          itemBuilder: (context, index) => Container(
+            width: 170,
+            margin: const EdgeInsets.only(right: 14),
+            child: const ShimmerLoader(width: 170, height: 220, borderRadius: 16),
+          ),
+        ),
       );
     }
 
@@ -180,12 +191,13 @@ class _DealCard extends StatelessWidget {
                 ClipRRect(
                   borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(16)),
-                  child: Image.network(
-                    deal.imageUrl,
+                  child: CachedNetworkImage(
+                    imageUrl: deal.imageUrl,
                     width: double.infinity,
                     height: 95,              // reduced from 110
                     fit: BoxFit.cover,
-                    errorBuilder: (c, e, s) => Container(
+                    placeholder: (context, url) => const ShimmerLoader(width: double.infinity, height: 95, borderRadius: 0),
+                    errorWidget: (c, e, s) => Container(
                       height: 95,
                       color: Colors.grey.shade200,
                     ),

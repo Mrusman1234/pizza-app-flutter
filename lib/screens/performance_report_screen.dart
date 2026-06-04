@@ -247,7 +247,7 @@ class _PerformanceReportScreenState extends State<PerformanceReportScreen> {
       'Growth': '${_growthRate.toStringAsFixed(1)}%',
     };
 
-    await PdfService.generatePerformanceReport(
+    await PdfService().generatePerformanceReport(
       title: 'Performance Report - ${DateFormat('MMMM yyyy').format(DateTime.now())}',
       kpis: kpis,
       topProducts: _topProducts,

@@ -29,13 +29,17 @@ class RouteNames {
   static const String adminRestaurantAdmins = '/admin-restaurant-admins';
   static const String adminSettings = '/admin-settings';
   static const String adminLogin = '/admin-login';
+  static const String adminStoreProducts = '/admin-store-products';
   static const String forgotPassword = '/forgot-password';
   static const String settings = '/settings';
   static const String editProfile = '/edit-profile';
   static const String helpCenter = '/help-center';
   static const String riderDashboard = '/rider-dashboard';
   static const String payment = '/payment';
+  static const String paymentMethods = '/payment-methods';
   static const String orderSuccess = '/order-success';
+  static const String chat = '/chat';
+  static const String wallet = '/wallet';
 
   // ── Restaurant admin routes (child admin) ─────────────────────────────────
   static const String restaurantAdminDashboard = '/restaurant-admin-dashboard';

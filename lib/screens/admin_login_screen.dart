@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -73,8 +74,21 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
         debugPrint('👤 Role Found: ${user?.role}');
 
         if (user != null && user.role == 'admin') {
-          debugPrint('✅ Access Granted. Navigating to Dashboard...');
-          Navigator.pushReplacementNamed(context, RouteNames.adminDashboard);
+          if (kIsWeb) {
+            debugPrint('✅ Access Granted. Navigating to Dashboard...');
+            Navigator.pushReplacementNamed(context, RouteNames.adminDashboard);
+          } else {
+            debugPrint('❌ Admin login attempt on Mobile. Blocking UI.');
+            await authProvider.logout(context);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text("Access Denied: Administrator Panel is only available on Web."),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+            }
+          }
         } else {
           debugPrint('❌ Access Denied: User role is "${user?.role}"');
           await authProvider.logout(context);

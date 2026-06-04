@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/firestore_constants.dart';
 import '../../services/auth_service.dart';
@@ -11,6 +12,9 @@ import '../../routes/route_names.dart';
 import '../../providers/cart_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/cart_model.dart';
+import '../../models/order_model.dart';
+import '../../services/pdf_service.dart';
+import '../../models/restaurant_model.dart';
 
 class OrderDetailsScreen extends StatefulWidget {
   final String? orderId;
@@ -472,6 +476,31 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
     );
   }
 
+  Future<void> _openMaps(double? lat, double? lng) async {
+    if (lat == null || lng == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Coordinates not available')),
+      );
+      return;
+    }
+
+    final googleMapsUrl = Uri.parse('google.navigation:q=$lat,$lng');
+    final appleMapsUrl = Uri.parse('https://maps.apple.com/?q=$lat,$lng');
+    final fallbackUrl = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+
+    try {
+      if (await canLaunchUrl(googleMapsUrl)) {
+        await launchUrl(googleMapsUrl);
+      } else if (await canLaunchUrl(appleMapsUrl)) {
+        await launchUrl(appleMapsUrl);
+      } else {
+        await launchUrl(fallbackUrl, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      debugPrint('Could not open maps: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.orderId == null) {
@@ -506,7 +535,12 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
         final createdAt = (order[FirestoreConstants.createdAt] as Timestamp?)?.toDate() ?? DateTime.now();
         final formattedDate = DateFormat('MMMM dd, yyyy • hh:mm a').format(createdAt);
         final status = order[FirestoreConstants.status] ?? FirestoreConstants.statusPending;
-        final totalAmount = order[FirestoreConstants.totalAmount] ?? 0.0;
+        
+        // Safe conversion for totalAmount
+        final rawTotal = order[FirestoreConstants.totalAmount];
+        debugPrint('🔍 Debug totalAmount: $rawTotal (type: ${rawTotal.runtimeType})');
+        final totalAmount = (rawTotal as num? ?? 0.0).toDouble();
+
         final address = order[FirestoreConstants.address] ?? 'No address provided';
         final displayOrderId = order[FirestoreConstants.id].toString().length > 8 
             ? order[FirestoreConstants.id].toString().substring(0, 8).toUpperCase()
@@ -558,23 +592,34 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
                                             ),
                                           ],
                                         ),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 12, vertical: 6),
-                                          decoration: BoxDecoration(
-                                            color: primary.withValues(alpha: 0.05),
-                                            border: Border.all(
-                                                color: primary.withValues(alpha: 0.2)),
-                                            borderRadius: BorderRadius.circular(999),
-                                          ),
-                                          child: Text(
-                                            'EN/UR',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.bold,
-                                              color: primary,
+                                        Row(
+                                          children: [
+                                            IconButton(
+                                              icon: const Icon(Icons.download_for_offline_outlined, color: Colors.blue),
+                                              onPressed: () => PdfService().generateAndPrintInvoice(
+                                                OrderModel.fromMap({'id': order[FirestoreConstants.id], ...order})
+                                              ),
+                                              tooltip: 'Download Invoice',
                                             ),
-                                          ),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                  horizontal: 12, vertical: 6),
+                                              decoration: BoxDecoration(
+                                                color: primary.withValues(alpha: 0.05),
+                                                border: Border.all(
+                                                    color: primary.withValues(alpha: 0.2)),
+                                                borderRadius: BorderRadius.circular(999),
+                                              ),
+                                              child: Text(
+                                                'EN/UR',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: primary,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ],
                                     ),
@@ -598,9 +643,9 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
                                     _buildPriceBreakdownCard(
                                       context,
                                       totalAmount,
-                                      subtotal: (order[FirestoreConstants.subtotal] ?? 0.0).toDouble(),
-                                      deliveryFee: (order[FirestoreConstants.deliveryFee] ?? 0.0).toDouble(),
-                                      tax: (order[FirestoreConstants.tax] ?? 0.0).toDouble(),
+                                      subtotal: (order[FirestoreConstants.subtotal] as num? ?? 0.0).toDouble(),
+                                      deliveryFee: (order[FirestoreConstants.deliveryFee] as num? ?? 0.0).toDouble(),
+                                      tax: (order[FirestoreConstants.tax] as num? ?? 0.0).toDouble(),
                                     ),
                                     const SizedBox(height: 120),
                                   ]),
@@ -641,6 +686,22 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
                                               borderRadius: BorderRadius.circular(12)),
                                           textStyle: const TextStyle(
                                               fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                  ] else if (Provider.of<AppAuthProvider>(context, listen: false).user?.role == 'rider' && status == 'On the way') ...[
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        onPressed: () => _openMaps(order['deliveryLat'], order['deliveryLng']),
+                                        icon: const Icon(Icons.navigation, size: 20),
+                                        label: const Text('Navigate'),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.blue,
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(vertical: 14),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                          textStyle: const TextStyle(fontWeight: FontWeight.bold),
                                         ),
                                       ),
                                     ),
@@ -910,8 +971,8 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
                   context,
                   icon: Icons.local_pizza,
                   name: item[FirestoreConstants.name] ?? 'Item',
-                  price: 'Rs. ${item[FirestoreConstants.price]}',
-                  quantity: item[FirestoreConstants.quantity] ?? 1,
+                  price: 'Rs. ${(item[FirestoreConstants.price] as num? ?? 0.0).toDouble().toStringAsFixed(0)}',
+                  quantity: (item[FirestoreConstants.quantity] as num? ?? 1).toInt(),
                   modifiers: modifiers.isNotEmpty ? modifiers : null,
                 ),
                 if (item != items.last) Divider(height: 1, thickness: 1, color: isDark ? AppColors.border : Colors.grey.shade100),

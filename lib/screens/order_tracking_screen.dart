@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_config.dart';
 import '../../routes/route_names.dart';
@@ -27,6 +28,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
   final Set<Polyline> _polylines = {};
   final String _googleApiKey = 'AIzaSyDecEs4ql9moIyK9JoLAXsmnCJUAOEhdCA'; // Using Android API Key from firebase_options
   LatLng? _lastRiderLatLng;
+  int? _liveEstimatedSeconds;
 
   Future<void> _callRider(String phone) async {
     // Clean the number — remove spaces, dashes, brackets
@@ -64,6 +66,77 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
     }
   }
 
+  void _showRatingDialog(OrderModel order) {
+    double foodRating = 5.0;
+    double riderRating = 5.0;
+    final commentController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text("Rate Your Experience", style: TextStyle(color: Colors.white)),
+        content: StatefulBuilder(
+          builder: (context, setDialogState) => SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text("Food Quality", style: TextStyle(color: AppColors.subtle)),
+                Row(
+                  children: List.generate(5, (index) => IconButton(
+                    icon: Icon(index < foodRating ? Icons.star : Icons.star_border, color: AppColors.primary),
+                    onPressed: () => setDialogState(() => foodRating = index + 1.0),
+                  )),
+                ),
+                const SizedBox(height: 16),
+                const Text("Rider Service", style: TextStyle(color: AppColors.subtle)),
+                Row(
+                  children: List.generate(5, (index) => IconButton(
+                    icon: Icon(index < riderRating ? Icons.star : Icons.star_border, color: AppColors.primary),
+                    onPressed: () => setDialogState(() => riderRating = index + 1.0),
+                  )),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: commentController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: "Tell us more...",
+                    hintStyle: const TextStyle(color: AppColors.muted),
+                    filled: true,
+                    fillColor: AppColors.card2,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  ),
+                  maxLines: 3,
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("CANCEL", style: TextStyle(color: AppColors.subtle))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            onPressed: () async {
+              await FirestoreService().submitOrderRating(
+                orderId: order.id,
+                restaurantId: order.restaurantId,
+                riderId: order.riderId,
+                foodRating: foodRating,
+                riderRating: riderRating,
+                review: commentController.text,
+              );
+              if (context.mounted) Navigator.pop(context);
+            },
+            child: const Text("SUBMIT", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _mapController?.dispose();
@@ -76,10 +149,21 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
     // Check if rider moved significantly before fetching new polyline
     bool shouldUpdatePolyline = _lastRiderLatLng == null;
     if (_lastRiderLatLng != null) {
-      // Very simple distance check or just update every time for now
-      shouldUpdatePolyline = true; 
+      // Calculate distance in meters
+      double distance = Geolocator.distanceBetween(
+        _lastRiderLatLng!.latitude,
+        _lastRiderLatLng!.longitude,
+        riderLatLng.latitude,
+        riderLatLng.longitude,
+      );
+      
+      // Update polyline if moved more than 50 meters
+      shouldUpdatePolyline = distance > 50; 
     }
-    _lastRiderLatLng = riderLatLng;
+    
+    if (shouldUpdatePolyline) {
+      _lastRiderLatLng = riderLatLng;
+    }
 
     final riderMarker = Marker(
       markerId: const MarkerId('rider'),
@@ -129,8 +213,16 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
           final points = data['routes'][0]['overview_polyline']['points'];
           final decodedPoints = _decodePolyline(points);
           
+          // Extract live duration
+          final legs = data['routes'][0]['legs'] as List;
+          int? durationSeconds;
+          if (legs.isNotEmpty) {
+            durationSeconds = (legs[0]['duration']['value'] as num?)?.toInt();
+          }
+          
           if (mounted) {
             setState(() {
+              _liveEstimatedSeconds = durationSeconds;
               _polylines.clear();
               _polylines.add(Polyline(
                 polylineId: const PolylineId('route'),
@@ -183,6 +275,16 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
   Widget build(BuildContext context) {
     const primary = AppColors.primary;
 
+    if (widget.orderId.isEmpty) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(title: const Text('Error')),
+        body: const Center(
+          child: Text("Error: Missing Order ID", style: TextStyle(color: Colors.red)),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -205,6 +307,8 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
               ...snapshot.data!.data()!,
             });
             final status = order.status;
+            final String? deliveryPin = snapshot.data!.data()?['deliveryPin'];
+            final String? parentCheckoutId = order.parentCheckoutId;
             final orderNumber = order.id.length > 5 ? order.id.substring(0, 5).toUpperCase() : order.id.toUpperCase();
 
             // Dynamic estimated arrival based on status
@@ -212,12 +316,19 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
             String timeSuffix = "";
             String remainingMsg = "Calculating...";
 
-            if (order.estimatedDeliveryTime != null) {
-              estimatedTime = DateFormat('h:mm').format(order.estimatedDeliveryTime!);
-              timeSuffix = DateFormat('a').format(order.estimatedDeliveryTime!);
+            DateTime? targetTime = order.estimatedDeliveryTime;
+            
+            // Override with live tracking data if available
+            if (_liveEstimatedSeconds != null && status == FirestoreConstants.statusOnTheWay) {
+              targetTime = DateTime.now().add(Duration(seconds: _liveEstimatedSeconds!));
+            }
+
+            if (targetTime != null) {
+              estimatedTime = DateFormat('h:mm').format(targetTime);
+              timeSuffix = DateFormat('a').format(targetTime);
               
               final now = DateTime.now();
-              final diff = order.estimatedDeliveryTime!.difference(now).inMinutes;
+              final diff = targetTime.difference(now).inMinutes;
               if (diff > 0) {
                 remainingMsg = "$diff mins remaining";
               } else if (diff > -5) {
@@ -308,6 +419,48 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                           ],
                         ),
                       ),
+                      const SizedBox(height: 12),
+
+                      // ── MULTI-ORDER GROUPING ──────────────────────────
+                      if (parentCheckoutId != null)
+                        _buildCheckoutGroupSection(parentCheckoutId, order.id),
+
+                      // ── DELIVERY PIN CARD ────────────────────────────────
+                      if (deliveryPin != null && status != FirestoreConstants.statusDelivered && status != FirestoreConstants.statusCancelled)
+                        Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(color: AppColors.primary.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 4))
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.vpn_key_rounded, color: Colors.white, size: 28),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('DELIVERY PIN', style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                                    const Text('Share this with the rider', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+                                child: Text(deliveryPin, style: const TextStyle(color: AppColors.primary, fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: 2)),
+                              ),
+                            ],
+                          ),
+                        ),
+
                       const SizedBox(height: 12),
                       // Map with Live Rider Location
                       if (order.riderId != null)
@@ -577,45 +730,61 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                               ],
                             ),
                             const SizedBox(height: 20),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: CustomButton(
-                                    text: "Call Rider",
-                                    onPressed: () {
-                                      if (order.riderPhone != null && order.riderPhone!.isNotEmpty) {
-                                        _callRider(order.riderPhone!);
-                                      } else {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Rider phone number not available yet')),
-                                        );
-                                      }
-                                    },
-                                    height: 50,
-                                    borderRadius: 16,
+                            if (status == FirestoreConstants.statusDelivered)
+                              CustomButton(
+                                text: order.ratingSubmitted ? "RATED" : "RATE ORDER",
+                                onPressed: order.ratingSubmitted ? null : () => _showRatingDialog(order),
+                                height: 50,
+                                borderRadius: 16,
+                                color: order.ratingSubmitted ? Colors.green : AppColors.primary,
+                              )
+                            else
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: CustomButton(
+                                      text: "Call Rider",
+                                      onPressed: () {
+                                        if (order.riderPhone != null && order.riderPhone!.isNotEmpty) {
+                                          _callRider(order.riderPhone!);
+                                        } else {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(content: Text('Rider phone number not available yet')),
+                                          );
+                                        }
+                                      },
+                                      height: 50,
+                                      borderRadius: 16,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: CustomButton(
-                                    text: "Message",
-                                    onPressed: () {
-                                      if (order.riderPhone != null && order.riderPhone!.isNotEmpty) {
-                                        _messageRider(order.riderPhone!);
-                                      } else {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Rider contact not available yet')),
-                                        );
-                                      }
-                                    },
-                                    height: 50,
-                                    borderRadius: 16,
-                                    isOutlined: true,
-                                    color: Colors.white,
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: CustomButton(
+                                      text: "Message",
+                                      onPressed: () {
+                                        if (order.riderId != null) {
+                                          Navigator.pushNamed(
+                                            context,
+                                            RouteNames.chat,
+                                            arguments: {
+                                              'orderId': order.id,
+                                              'otherUserName': order.riderName ?? 'Rider',
+                                            },
+                                          );
+                                        } else {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(content: Text('Rider contact not available yet')),
+                                          );
+                                        }
+                                      },
+                                      height: 50,
+                                      borderRadius: 16,
+                                      isOutlined: true,
+                                      color: Colors.white,
+                                    ),
                                   ),
-                                ),
-                              ],
-                            )
+                                ],
+                              )
                           ],
                         ),
                       ),
@@ -689,6 +858,87 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                   color: isActive ? primary : AppColors.muted))
         ],
       ),
+    );
+  }
+
+  Widget _buildCheckoutGroupSection(String checkoutId, String currentOrderId) {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: FirestoreService().getOrdersByCheckoutId(checkoutId),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.data!.length <= 1) return const SizedBox.shrink();
+
+        final orders = snapshot.data!;
+        return Container(
+          margin: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                child: Text(
+                  "OTHER DELIVERIES IN THIS CHECKOUT",
+                  style: TextStyle(color: AppColors.subtle, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1),
+                ),
+              ),
+              SizedBox(
+                height: 70,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: orders.length,
+                  itemBuilder: (context, index) {
+                    final o = orders[index];
+                    final oId = o[FirestoreConstants.id];
+                    final isCurrent = oId == currentOrderId;
+                    final resName = o[FirestoreConstants.restaurantName] ?? "Restaurant";
+                    final status = o[FirestoreConstants.status] ?? "Pending";
+
+                    return GestureDetector(
+                      onTap: isCurrent ? null : () {
+                        Navigator.pushReplacementNamed(
+                          context, 
+                          RouteNames.orderTracking, 
+                          arguments: oId
+                        );
+                      },
+                      child: Container(
+                        width: 140,
+                        margin: const EdgeInsets.only(right: 12),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: isCurrent ? AppColors.primary.withValues(alpha: 0.1) : AppColors.card,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: isCurrent ? AppColors.primary : AppColors.border),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              status == 'Delivered' ? Icons.check_circle : Icons.delivery_dining, 
+                              color: isCurrent ? AppColors.primary : Colors.white54, 
+                              size: 16
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(resName, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: isCurrent ? Colors.white : Colors.white70, fontSize: 11, fontWeight: FontWeight.bold)),
+                                  Text(status, style: TextStyle(color: isCurrent ? AppColors.primary : AppColors.subtle, fontSize: 9)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

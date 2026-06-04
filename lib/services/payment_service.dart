@@ -71,15 +71,18 @@ class PaymentService {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(body),
       );
+      
+      // In production, we don't trust this HTTP response alone.
+      // We only use this to see if the wallet request was "Sent".
       final result = jsonDecode(response.body);
+      
       return {
-        'success': result['pp_ResponseCode'] == '000',
-        'message': result['pp_ResponseMessage'] ?? 'Unknown error',
-        'txnRef': txnRefNo,
-        'raw': result,
+        'initiated': result['pp_ResponseCode'] == '000' || result['pp_ResponseCode'] == '124',
+        'message': 'Waiting for bank confirmation...',
+        'checkoutId': orderId, // This is actually our CheckoutId now
       };
     } catch (e) {
-      return {'success': false, 'message': e.toString()};
+      return {'initiated': false, 'message': e.toString()};
     }
   }
 

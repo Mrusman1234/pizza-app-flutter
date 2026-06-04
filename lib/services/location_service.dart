@@ -30,16 +30,42 @@ class LocationService {
     return true;
   }
 
+  /// Specialized check for background permission (Riders only)
+  Future<bool> requestBackgroundPermission() async {
+    if (kIsWeb) return true;
+    
+    LocationPermission permission = await Geolocator.checkPermission();
+    
+    if (permission != LocationPermission.always) {
+      permission = await Geolocator.requestPermission();
+      // On some Android versions, you might need to guide the user to settings 
+      // if they don't select "Allow all the time" immediately.
+      return permission == LocationPermission.always;
+    }
+
+    return true;
+  }
+
   /// Starts tracking the device's location.
   /// [onLocationChanged] is called whenever the position changes.
   Future<void> startTracking(Function(Position) onLocationChanged) async {
     final hasPermission = await requestPermissions();
     if (!hasPermission) return;
 
-    const LocationSettings locationSettings = LocationSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 10, // Update every 10 meters
-    );
+    final LocationSettings locationSettings = kIsWeb 
+      ? const LocationSettings(accuracy: LocationAccuracy.high)
+      : AndroidSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 10,
+          forceLocationManager: true,
+          intervalDuration: const Duration(seconds: 10),
+          // ── FOREGROUND SERVICE ──────────────────────────────────────────
+          foregroundNotificationConfig: const ForegroundNotificationConfig(
+            notificationText: "Order Delivery in progress",
+            notificationTitle: "Rider Tracking Active",
+            enableWakeLock: true,
+          ),
+        );
 
     _positionStreamSubscription = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
       (Position position) {

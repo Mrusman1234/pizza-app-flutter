@@ -1,9 +1,11 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+// Fixed imports and inheritance
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/notification_model.dart';
 import '../services/firestore_service.dart';
+import '../services/notification_service.dart';
 
-class NotificationProvider with ChangeNotifier {
+class NotificationProvider extends ChangeNotifier {
   final FirestoreService _firestoreService = FirestoreService();
   List<NotificationModel> _notifications = [];
   bool _isLoading = false;
@@ -21,15 +23,29 @@ class NotificationProvider with ChangeNotifier {
         : _firestoreService.getUserNotifications(userId);
 
     stream.listen((data) {
-      _notifications = data
+      final newNotifications = data
           .map((item) => NotificationModel.fromMap(item, item['id'] as String))
           .toList();
+
+      if (_notifications.isNotEmpty && newNotifications.isNotEmpty) {
+        final newest = newNotifications.first;
+        bool isAlreadyPresent = _notifications.any((n) => n.id == newest.id);
+        
+        if (!isAlreadyPresent && !newest.isRead) {
+          NotificationService().showInstantNotification(
+            title: newest.title,
+            body: newest.body,
+            payload: newest.orderId,
+          );
+        }
+      }
+
+      _notifications = newNotifications;
       _isLoading = false;
       notifyListeners();
     });
   }
 
-  /// Mark a single notification as read in Firestore and locally.
   Future<void> markAsRead(String notificationId) async {
     try {
       await FirebaseFirestore.instance
@@ -37,7 +53,6 @@ class NotificationProvider with ChangeNotifier {
           .doc(notificationId)
           .update({'isRead': true});
 
-      // Optimistically update local list so UI refreshes immediately
       final idx = _notifications.indexWhere((n) => n.id == notificationId);
       if (idx != -1) {
         final old = _notifications[idx];
@@ -53,11 +68,10 @@ class NotificationProvider with ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      debugPrint('markAsRead error: $e');
+      debugPrint('markAsRead error: \$e');
     }
   }
 
-  /// Mark all notifications as read in a single Firestore batch.
   Future<void> markAllAsRead() async {
     final unread = _notifications.where((n) => !n.isRead).toList();
     if (unread.isEmpty) return;
@@ -72,7 +86,6 @@ class NotificationProvider with ChangeNotifier {
       }
       await batch.commit();
 
-      // Update local state
       _notifications = _notifications
           .map((n) => NotificationModel(
                 id: n.id,
@@ -86,7 +99,7 @@ class NotificationProvider with ChangeNotifier {
           .toList();
       notifyListeners();
     } catch (e) {
-      debugPrint('markAllAsRead error: $e');
+      debugPrint('markAllAsRead error: \$e');
     }
   }
 

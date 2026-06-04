@@ -21,7 +21,7 @@ class OrderTrackingCard extends StatelessWidget {
         return GestureDetector(
           onTap: () => Navigator.pushNamed(
             context, 
-            RouteNames.orderDetails, 
+            RouteNames.orderTracking,
             arguments: activeOrder.id,
           ),
           child: Container(

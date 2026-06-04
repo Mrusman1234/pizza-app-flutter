@@ -3,20 +3,23 @@ import 'package:flutter/material.dart';
 import '../models/restaurant_model.dart';
 import '../models/pizza_model.dart';
 import '../services/firestore_service.dart';
+import '../core/utils/location_helper.dart';
 
 class RestaurantProvider with ChangeNotifier {
   final FirestoreService _firestoreService = FirestoreService();
   List<RestaurantModel> _restaurants = [];
+  Map<String, double> _distances = {};
   bool _isLoading = false;
   StreamSubscription? _restaurantsSubscription;
 
   String? _error;
 
   List<RestaurantModel> get restaurants => _restaurants;
+  Map<String, double> get distances => _distances;
   bool get isLoading => _isLoading;
   String? get error => _error;
 
-  Future<void> fetchRestaurants({String? searchQuery, String? filter}) async {
+  Future<void> fetchRestaurants({String? searchQuery, String? filter, double? userLat, double? userLng}) async {
     await _restaurantsSubscription?.cancel();
     
     _isLoading = true;
@@ -27,6 +30,11 @@ class RestaurantProvider with ChangeNotifier {
       _restaurantsSubscription = _firestoreService.getRestaurants(searchQuery: searchQuery, filter: filter).listen(
         (data) {
           _restaurants = data.map((item) => RestaurantModel.fromMap(item)).toList();
+          
+          if (userLat != null && userLng != null) {
+            _calculateDistances(userLat, userLng);
+          }
+
           _isLoading = false;
           _error = null;
           notifyListeners();
@@ -43,6 +51,16 @@ class RestaurantProvider with ChangeNotifier {
       _error = e.toString();
       debugPrint("Error fetching restaurants: $e");
       notifyListeners();
+    }
+  }
+
+  void _calculateDistances(double userLat, double userLng) {
+    for (var res in _restaurants) {
+      if (res.latitude != null && res.longitude != null) {
+        _distances[res.id] = LocationHelper.calculateDistance(
+          userLat, userLng, res.latitude!, res.longitude!
+        );
+      }
     }
   }
 

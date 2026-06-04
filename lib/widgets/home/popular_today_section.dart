@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/constants/app_colors.dart';
 import '../../models/pizza_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/cart_provider.dart';
 import '../../providers/restaurant_provider.dart';
 import '../../routes/route_names.dart';
+import '../shimmer_loader.dart';
 
 class PopularTodaySection extends StatelessWidget {
   final String selectedCategory;
@@ -66,7 +68,9 @@ class PopularTodaySection extends StatelessWidget {
           stream: provider.getGlobalPopularItems(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
+              return Column(
+                children: List.generate(3, (index) => const MenuItemShimmer()),
+              );
             }
             final items = snapshot.data ?? [];
             if (items.isEmpty) {
@@ -156,12 +160,13 @@ class _PopularItemCard extends StatelessWidget {
             // Image
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: Image.network(
-                item.imageUrl,
+              child: CachedNetworkImage(
+                imageUrl: item.imageUrl,
                 width: 60,
                 height: 60,
                 fit: BoxFit.cover,
-                errorBuilder: (c, e, s) => Container(
+                placeholder: (context, url) => const ShimmerLoader(width: 60, height: 60),
+                errorWidget: (context, url, error) => Container(
                   width: 60,
                   height: 60,
                   color: Colors.grey.shade200,
@@ -204,13 +209,16 @@ class _PopularItemCard extends StatelessWidget {
                             fontSize: 11, fontWeight: FontWeight.w700),
                       ),
                       const SizedBox(width: 8),
-                      Icon(Icons.local_fire_department,
-                          size: 12, color: Colors.orange),
+                      Icon(Icons.location_on, size: 12, color: Colors.redAccent),
                       const SizedBox(width: 2),
-                      Text(
-                        'Trending',
-                        style: TextStyle(
-                            fontSize: 11, color: Colors.grey.shade400),
+                      Consumer<RestaurantProvider>(
+                        builder: (context, restProv, _) {
+                          final dist = restProv.distances[item.restaurantId];
+                          return Text(
+                            dist != null ? '${dist.toStringAsFixed(1)} km' : 'Near you',
+                            style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
+                          );
+                        },
                       ),
                     ],
                   ),

@@ -1,9 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
+import '../routes/route_names.dart';
 import 'cart_provider.dart';
 
 class AppAuthProvider with ChangeNotifier {
@@ -20,8 +22,6 @@ class AppAuthProvider with ChangeNotifier {
   }
 
   Future<void> _initUser() async {
-    // Note: We don't pass context here as it's not available during provider initialization.
-    // SplashScreen will handle the initial cart loading via fetchUserData(context).
     if (isAuthenticated) {
       await fetchUserData(null);
     }
@@ -38,7 +38,6 @@ class AppAuthProvider with ChangeNotifier {
         if (doc.exists) {
           _userModel = UserModel.fromMap(doc.data()!);
           
-          // Load cart if context is provided (e.g. during auto-login)
           if (context != null && context.mounted) {
             final cartProvider = Provider.of<CartProvider>(context, listen: false);
             await cartProvider.loadCartFromFirestore(user.uid);
@@ -53,6 +52,44 @@ class AppAuthProvider with ChangeNotifier {
     }
   }
 
+  /// ── ROLE-BASED NAVIGATION LOGIC ──────────────────────────────────────────
+  /// This centralizes redirection after Login or Splash
+  void navigateBasedOnRole(BuildContext context) {
+    if (_userModel == null) {
+      Navigator.pushReplacementNamed(context, RouteNames.login);
+      return;
+    }
+
+    final String role = _userModel!.role;
+    debugPrint('🚦 Routing user with role: $role (Platform: ${kIsWeb ? "Web" : "Mobile"})');
+
+    if (role == 'admin') {
+      if (kIsWeb) {
+        Navigator.pushReplacementNamed(context, RouteNames.adminDashboard);
+      } else {
+        // Admin on Mobile -> Still allowed to login, but directed to a safe screen
+        // or we can block it. User requested "NEVER show Admin UI on mobile".
+        // We'll route them to a "Mobile Restricted" view or just Rider Dashboard 
+        // if they are Super Admins who also deliver, or just back to Home.
+        // For now, let's route to Home but hide Admin links.
+        Navigator.pushReplacementNamed(context, RouteNames.home);
+      }
+    } else if (role == 'restaurant_admin') {
+      // Restaurant admins usually work from Web/Tablet
+      if (kIsWeb) {
+        Navigator.pushReplacementNamed(context, RouteNames.restaurantAdminDashboard);
+      } else {
+        Navigator.pushReplacementNamed(context, RouteNames.home);
+      }
+    } else if (role == 'rider') {
+      // Riders MUST use mobile
+      Navigator.pushReplacementNamed(context, RouteNames.riderDashboard);
+    } else {
+      // Default: Customers
+      Navigator.pushReplacementNamed(context, RouteNames.home);
+    }
+  }
+
   Future<bool> login(String email, String password, BuildContext context) async {
     _isLoading = true;
     notifyListeners();
@@ -60,7 +97,6 @@ class AppAuthProvider with ChangeNotifier {
     if (success && context.mounted) {
       await fetchUserData(context);
       if (_userModel != null) {
-        // Initialize demo data if user is admin
         if (_userModel?.role == 'admin') {
           await FirestoreService().initializeDemoData(adminId: _userModel!.uid);
         }

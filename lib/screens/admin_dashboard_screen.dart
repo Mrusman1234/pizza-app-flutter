@@ -17,6 +17,7 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final FirestoreService _firestoreService = FirestoreService();
+  int _lastPendingCount = 0;
 
   // Selection
   String? selectedRestaurantId;
@@ -62,13 +63,24 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ),
               builder: (context, snapshot) {
                 final stats = snapshot.data ?? {};
+                final int pendingOrders = stats[FirestoreConstants.pendingOrders] ?? 0;
+
+                // ── NEW ORDER ALERT LOGIC ──────────────────────────────────
+                if (snapshot.hasData && pendingOrders > _lastPendingCount) {
+                  _lastPendingCount = pendingOrders;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _showNewOrderAlert();
+                  });
+                } else if (snapshot.hasData) {
+                  _lastPendingCount = pendingOrders;
+                }
+
                 final int totalOrders = stats[FirestoreConstants.totalOrders] ?? 0;
                 final double totalRevenue = (stats[FirestoreConstants.totalRevenue] ?? 0.0).toDouble();
                 final double totalCommission = (stats[FirestoreConstants.totalCommission] ?? 0.0).toDouble();
                 final int totalRestaurants = stats[FirestoreConstants.totalRestaurants] ?? 0;
                 final int totalCustomers = stats[FirestoreConstants.totalCustomers] ?? 0;
                 final int totalRiders = stats[FirestoreConstants.totalRiders] ?? 0;
-                final int pendingOrders = stats[FirestoreConstants.pendingOrders] ?? 0;
 
                 return Column(
                   children: [
@@ -338,6 +350,33 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showNewOrderAlert() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: const [
+            Icon(Icons.warning_amber_rounded, color: Colors.white),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                '🔔 NEW ORDER RECEIVED! Please check the orders management section.',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: AppColors.primary,
+        duration: const Duration(seconds: 10),
+        behavior: SnackBarBehavior.floating,
+        action: SnackBarAction(
+          label: 'VIEW',
+          textColor: Colors.white,
+          onPressed: () => _openOrders(null),
+        ),
       ),
     );
   }

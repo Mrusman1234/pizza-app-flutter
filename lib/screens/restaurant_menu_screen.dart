@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/constants/app_colors.dart';
 import '../../models/pizza_model.dart';
 import '../../models/restaurant_model.dart';
@@ -7,6 +8,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/cart_provider.dart';
 import '../../providers/restaurant_provider.dart';
 import '../../routes/route_names.dart';
+import '../widgets/shimmer_loader.dart';
 
 class RestaurantMenuScreen extends StatefulWidget {
   final String? restaurantId;
@@ -35,13 +37,26 @@ class _RestaurantMenuScreenState extends State<RestaurantMenuScreen> {
 
     final bool isPOClock = (widget.restaurantName ?? '').toLowerCase().contains('pizza o clock');
 
+    // DEBUG LOGS
+    debugPrint('🏪 Opening RestaurantMenuScreen for: ${widget.restaurantName}');
+    debugPrint('🆔 Restaurant ID: "${widget.restaurantId}"');
+
+    if (widget.restaurantId == null || widget.restaurantId!.isEmpty) {
+      return Scaffold(
+        backgroundColor: backgroundColor,
+        appBar: AppBar(title: const Text('Error')),
+        body: const Center(
+          child: Text("Error: Missing Restaurant ID", style: TextStyle(color: Colors.red)),
+        ),
+      );
+    }
+
     return StreamBuilder<RestaurantModel?>(
-      stream: widget.restaurantId != null 
-          ? Provider.of<RestaurantProvider>(context, listen: false).getRestaurantStream(widget.restaurantId!)
-          : Stream.value(null),
+      stream: Provider.of<RestaurantProvider>(context, listen: false).getRestaurantStream(widget.restaurantId!),
       builder: (context, restaurantSnapshot) {
         final restaurant = restaurantSnapshot.data;
         final isBusy = restaurant?.isBusy ?? false;
+        final isClosed = restaurant != null && !restaurant.isOperatingNow;
 
         return Scaffold(
           backgroundColor: backgroundColor,
@@ -181,58 +196,84 @@ class _RestaurantMenuScreenState extends State<RestaurantMenuScreen> {
                     child: Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(24),
-                        image: DecorationImage(
-                          image: NetworkImage(
-                            restaurant?.imageUrl ?? 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=800',
-                          ),
-                          fit: BoxFit.cover,
-                        ),
                       ),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(24),
-                          gradient: const LinearGradient(
-                            colors: [Colors.black54, Colors.transparent],
-                            begin: Alignment.bottomCenter,
-                            end: Alignment.topCenter,
-                          ),
-                        ),
-                        padding: const EdgeInsets.all(16),
-                        alignment: Alignment.bottomLeft,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(24),
+                        child: Stack(
                           children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: primary,
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: const Text(
-                                'Top Rated',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 1,
-                                ),
-                              ),
+                            CachedNetworkImage(
+                              imageUrl: restaurant?.imageUrl ?? 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=800',
+                              width: double.infinity,
+                              height: double.infinity,
+                              fit: BoxFit.cover,
+                              placeholder: (context, url) => const ShimmerLoader(width: double.infinity, height: double.infinity, borderRadius: 0),
+                              errorWidget: (context, url, error) => Container(color: Colors.grey.shade800),
                             ),
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: const Text(
-                                'Trending',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 1,
+                            if (isClosed)
+                              Container(
+                                color: Colors.black.withValues(alpha: 0.6),
+                                child: Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(Icons.timer_off_outlined, color: Colors.white, size: 48),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        isBusy ? 'BUSY' : 'CLOSED NOW',
+                                        style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900, letterSpacing: 2),
+                                      ),
+                                      const Text('Check operating hours below', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                                    ],
+                                  ),
                                 ),
+                              ),
+                            Container(
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [Colors.black54, Colors.transparent],
+                                  begin: Alignment.bottomCenter,
+                                  end: Alignment.topCenter,
+                                ),
+                              ),
+                              padding: const EdgeInsets.all(16),
+                              alignment: Alignment.bottomLeft,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: primary,
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: const Text(
+                                      'Top Rated',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 1,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.2),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: const Text(
+                                      'Trending',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 1,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
@@ -269,11 +310,13 @@ class _RestaurantMenuScreenState extends State<RestaurantMenuScreen> {
                                   offset: const Offset(0, 4),
                                 ),
                               ],
-                              image: DecorationImage(
-                                image: NetworkImage(
-                                  restaurant?.imageUrl ?? 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400',
-                                ),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: CachedNetworkImage(
+                                imageUrl: restaurant?.imageUrl ?? 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400',
                                 fit: BoxFit.cover,
+                                placeholder: (context, url) => const ShimmerLoader(width: 80, height: 80, borderRadius: 16),
                               ),
                             ),
                           ),
@@ -371,8 +414,13 @@ class _RestaurantMenuScreenState extends State<RestaurantMenuScreen> {
                     : Future.value([]),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const SliverToBoxAdapter(
-                      child: Center(child: CircularProgressIndicator()),
+                    return SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Column(
+                          children: List.generate(4, (index) => const MenuItemShimmer()),
+                        ),
+                      ),
                     );
                   }
 
@@ -396,7 +444,7 @@ class _RestaurantMenuScreenState extends State<RestaurantMenuScreen> {
                           pizza: item.restaurantName == null 
                             ? item.copyWith(restaurantName: widget.restaurantName) 
                             : item,
-                          isBusy: isBusy,
+                          isBusy: isClosed || isBusy,
                         );
                       }).toList(),
                     ),
@@ -410,7 +458,7 @@ class _RestaurantMenuScreenState extends State<RestaurantMenuScreen> {
           // View Cart button sticky at bottom
           Consumer<CartProvider>(
             builder: (context, cartProvider, child) {
-              if (cartProvider.itemCount == 0 || isBusy) return const SizedBox.shrink();
+              if (cartProvider.itemCount == 0 || isBusy || isClosed) return const SizedBox.shrink();
               
               final count = cartProvider.itemCount;
               final total = cartProvider.totalAmount;

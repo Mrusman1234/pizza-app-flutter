@@ -122,6 +122,29 @@ class NotificationService {
     );
   }
 
+  Future<void> showInstantNotification({
+    required String title,
+    required String body,
+    String? payload,
+  }) async {
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      'high_importance_channel',
+      'Order Updates',
+      channelDescription: 'Real-time updates about your orders.',
+      importance: Importance.max,
+      priority: Priority.high,
+    );
+    const NotificationDetails platformDetails = NotificationDetails(android: androidDetails);
+
+    await _localNotifications.show(
+      id: DateTime.now().millisecond,
+      title: title,
+      body: body,
+      notificationDetails: platformDetails,
+      payload: payload,
+    );
+  }
+
   /// Called when user taps a notification while app is in background
   void _handleMessageOpenedApp(RemoteMessage message) {
     final orderId = message.data['orderId'] as String?;

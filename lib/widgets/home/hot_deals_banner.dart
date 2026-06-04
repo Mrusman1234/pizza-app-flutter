@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/constants/app_colors.dart';
 import '../../providers/deals_provider.dart';
 import '../../models/deal_model.dart';
 import '../../routes/route_names.dart';
+import '../shimmer_loader.dart';
 
 class HotDealsBanner extends StatefulWidget {
   const HotDealsBanner({super.key});
@@ -50,9 +52,9 @@ class _HotDealsBannerState extends State<HotDealsBanner> {
     final hotDeals = dealsProvider.deals.where((d) => d.tag == 'HOT').toList();
 
     if (dealsProvider.isLoading && hotDeals.isEmpty) {
-      return const SizedBox(
-        height: 150,
-        child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: const ShimmerLoader(width: double.infinity, height: 150, borderRadius: 18),
       );
     }
 
@@ -168,10 +170,11 @@ class _BannerCard extends StatelessWidget {
                   colors: [color1, Colors.transparent],
                 ).createShader(bounds),
                 blendMode: BlendMode.dstOut,
-                child: Image.network(
-                  deal.imageUrl,
+                child: CachedNetworkImage(
+                  imageUrl: deal.imageUrl,
                   fit: BoxFit.cover,
-                  errorBuilder: (c, e, s) => const SizedBox(),
+                  placeholder: (context, url) => const ShimmerLoader(width: 140, height: 150, borderRadius: 0),
+                  errorWidget: (c, e, s) => const SizedBox(),
                 ),
               ),
             ),
