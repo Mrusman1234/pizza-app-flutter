@@ -14,7 +14,6 @@ import '../../providers/auth_provider.dart';
 import '../../models/cart_model.dart';
 import '../../models/order_model.dart';
 import '../../services/pdf_service.dart';
-import '../../models/restaurant_model.dart';
 
 class OrderDetailsScreen extends StatefulWidget {
   final String? orderId;

@@ -118,7 +118,9 @@ class _WalletScreenState extends State<WalletScreen> {
                       }
                     } catch (e) {
                       setModalState(() => isSubmitting = false);
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                      }
                     }
                   },
                   child: isSubmitting 

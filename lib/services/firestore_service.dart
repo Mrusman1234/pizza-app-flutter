@@ -75,7 +75,7 @@ class FirestoreService {
         .snapshots()
         .map((snapshot) => snapshot.docs
             .map((doc) => {
-                  ...doc.data() as Map<String, dynamic>,
+                  ...doc.data(),
                   FirestoreConstants.id: doc.id,
                 })
             .toList());
@@ -139,7 +139,7 @@ class FirestoreService {
         .snapshots()
         .map((snapshot) => snapshot.docs
             .map((doc) => {
-                  ...doc.data() as Map<String, dynamic>,
+                  ...doc.data(),
                   FirestoreConstants.id: doc.id,
                   FirestoreConstants.restaurantId: restaurantId,
                 })
@@ -582,39 +582,120 @@ class FirestoreService {
 
   Stream<List<Map<String, dynamic>>> getUserNotifications(String userId) {
     if (userId.isEmpty) return Stream.value([]);
-    return _db
-        .collection(FirestoreConstants.notifications)
-        .where(FirestoreConstants.userId, isEqualTo: userId)
-        .orderBy(FirestoreConstants.createdAt, descending: true)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) => {
-        ...doc.data(),
-        FirestoreConstants.id: doc.id,
-      }).toList();
-    });
+    try {
+      return _db
+          .collection(FirestoreConstants.notifications)
+          .where(FirestoreConstants.userId, isEqualTo: userId)
+          .orderBy(FirestoreConstants.createdAt, descending: true)
+          .snapshots()
+          .map((snapshot) {
+        return snapshot.docs.map((doc) {
+          final data = doc.data();
+          return {
+            ...data,
+            FirestoreConstants.id: doc.id,
+          };
+        }).toList();
+      });
+    } catch (e) {
+      debugPrint('Error getting user notifications stream: $e');
+      return Stream.value([]);
+    }
   }
 
   Stream<List<Map<String, dynamic>>> getAdminNotifications({String? adminId, String? restaurantId}) {
-    Query query = _db.collection(FirestoreConstants.notifications);
+    try {
+      Query query = _db.collection(FirestoreConstants.notifications);
 
-    if (adminId != null && adminId.isNotEmpty) {
-      query = query.where(FirestoreConstants.adminId, isEqualTo: adminId);
+      if (adminId != null && adminId.isNotEmpty) {
+        query = query.where(FirestoreConstants.adminId, isEqualTo: adminId);
+      }
+      
+      if (restaurantId != null && restaurantId.isNotEmpty) {
+        query = query.where(FirestoreConstants.restaurantId, isEqualTo: restaurantId);
+      }
+
+      return query
+          .orderBy(FirestoreConstants.createdAt, descending: true)
+          .snapshots()
+          .map((snapshot) {
+        return snapshot.docs.map((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          return {
+            ...data,
+            FirestoreConstants.id: doc.id,
+          };
+        }).toList();
+      });
+    } catch (e) {
+      debugPrint('Error getting admin notifications stream: $e');
+      return Stream.value([]);
     }
-    
-    if (restaurantId != null && restaurantId.isNotEmpty) {
-      query = query.where(FirestoreConstants.restaurantId, isEqualTo: restaurantId);
+  }
+
+  Future<void> bulkAddMenuItems(String restaurantId, String rawText) async {
+    if (restaurantId.isEmpty || rawText.isEmpty) return;
+
+    final List<String> lines = rawText.split('\n');
+    final batch = _db.batch();
+    int count = 0;
+
+    for (var line in lines) {
+      if (line.trim().isEmpty) continue;
+
+      // ── SMART PARSER ──────────────────────────────────────────────────
+      // Expected formats: 
+      // 1. "Pizza Name - 500 - Delicious pizza"
+      // 2. "Pizza Name: 500"
+      // 3. "Pizza Name 500"
+      
+      String name = '';
+      double price = 0.0;
+      String description = 'Freshly prepared.';
+      
+      final parts = line.split(RegExp(r'[-:]'));
+      if (parts.length >= 2) {
+        name = parts[0].trim();
+        price = double.tryParse(parts[1].replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0;
+        if (parts.length > 2) description = parts[2].trim();
+      } else {
+        // Try to find price at the end of the string
+        final words = line.trim().split(' ');
+        if (words.length > 1) {
+          final possiblePrice = double.tryParse(words.last.replaceAll(RegExp(r'[^0-9.]'), ''));
+          if (possiblePrice != null) {
+            price = possiblePrice;
+            name = words.sublist(0, words.length - 1).join(' ');
+          } else {
+            name = line.trim();
+          }
+        }
+      }
+
+      if (name.isNotEmpty) {
+        final docRef = _db
+            .collection(FirestoreConstants.restaurants)
+            .doc(restaurantId)
+            .collection(FirestoreConstants.menu)
+            .doc();
+            
+        batch.set(docRef, {
+          FirestoreConstants.name: name,
+          FirestoreConstants.price: price,
+          FirestoreConstants.description: description,
+          FirestoreConstants.category: 'General',
+          'isAvailable': true,
+          'restaurantId': restaurantId,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        count++;
+      }
     }
 
-    return query
-        .orderBy(FirestoreConstants.createdAt, descending: true)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) => <String, dynamic>{
-        ...doc.data() as Map<String, dynamic>,
-        FirestoreConstants.id: doc.id,
-      }).toList();
-    });
+    if (count > 0) {
+      await batch.commit();
+      debugPrint('✅ Bulk added $count items to $restaurantId');
+    }
   }
 
   Future<void> addAdminNotification(Map<String, dynamic> notificationData) async {
@@ -625,6 +706,12 @@ class FirestoreService {
       FirestoreConstants.isRead: false,
       FirestoreConstants.createdAt: FieldValue.serverTimestamp(),
     });
+
+    // ── BULK BROADCAST LOGIC (MOCK) ──────────────────────────────────────
+    if (notificationData[FirestoreConstants.target] == 'All Users') {
+      debugPrint('📣 BROADCAST: Sending notification to all registered FCM tokens...');
+      // In production, this would trigger a Cloud Function or loop through 'users' collection
+    }
   }
 
   Future<void> deleteAdminNotification(String notificationId) async {
@@ -865,6 +952,26 @@ class FirestoreService {
         .delete();
 
     await _audit.logMenuUpdate(restaurantId, itemId, 'DELETE_MENU_ITEM');
+  }
+
+  Future<void> bulkDeleteMenuItems(String restaurantId, List<String> itemIds) async {
+    if (restaurantId.isEmpty || itemIds.isEmpty) return;
+
+    final batch = _db.batch();
+    final menuRef = _db
+        .collection(FirestoreConstants.restaurants)
+        .doc(restaurantId)
+        .collection(FirestoreConstants.menu);
+
+    for (var id in itemIds) {
+      batch.delete(menuRef.doc(id));
+    }
+
+    await batch.commit();
+    
+    for (var id in itemIds) {
+      await _audit.logMenuUpdate(restaurantId, id, 'BULK_DELETE_MENU_ITEMS');
+    }
   }
 
   Stream<Map<String, dynamic>?> getRestaurantByIdStream(String id) {
@@ -1276,6 +1383,7 @@ class FirestoreService {
 
       // Notify customer about status change
       if (userId != null) {
+        debugPrint('🔔 [NOTIFICATION FLOW] Step 1: Creating notification document in Firestore for User: $userId');
         await _db.collection(FirestoreConstants.notifications).add({
           FirestoreConstants.userId: userId,
           FirestoreConstants.title: notificationTitle,
@@ -1409,7 +1517,7 @@ class FirestoreService {
         .snapshots()
         .map((snapshot) => snapshot.docs
             .map((doc) => {
-                  ...doc.data() as Map<String, dynamic>,
+                  ...doc.data(),
                   FirestoreConstants.id: doc.id,
                 })
             .toList());
@@ -1669,6 +1777,307 @@ class FirestoreService {
     }
     
     debugPrint('✅ Successfully uploaded ${menuItems.length} menu items for $targetName!');
+  }
+
+  Future<void> addCookoozMenu({String? restaurantId, String? restaurantName}) async {
+    final String? adminId = _auth.currentUser?.uid;
+    if (adminId == null) throw Exception("User not authenticated");
+
+    String targetId = restaurantId ?? '';
+    String targetName = restaurantName ?? "CooKoo'z Café & Grill";
+
+    if (targetId.isEmpty) {
+      final existing = await _db
+          .collection(FirestoreConstants.restaurants)
+          .where(FirestoreConstants.adminId, isEqualTo: adminId)
+          .where(FirestoreConstants.name, isEqualTo: targetName)
+          .limit(1)
+          .get();
+
+      if (existing.docs.isNotEmpty) {
+        targetId = existing.docs.first.id;
+      } else {
+        final newRes = await _db.collection(FirestoreConstants.restaurants).add({
+          FirestoreConstants.adminId: adminId,
+          FirestoreConstants.name: targetName,
+          FirestoreConstants.description: 'Best Pizza, Burgers & Steaks in Sahiwal & Vehari',
+          FirestoreConstants.rating: '4.7',
+          FirestoreConstants.time: '25-40 min',
+          FirestoreConstants.delivery: 'Free Delivery',
+          FirestoreConstants.image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400',
+          FirestoreConstants.createdAt: FieldValue.serverTimestamp(),
+          FirestoreConstants.commissionRate: 15.0,
+          'isEnabled': true,
+        });
+        targetId = newRes.id;
+      }
+    }
+
+    final menuRef = _db
+        .collection(FirestoreConstants.restaurants)
+        .doc(targetId)
+        .collection(FirestoreConstants.menu);
+
+    final List<Map<String, dynamic>> cookoozAddons = [
+      {
+        'name': 'Extra Cheese',
+        'price': 150.0, // Default medium
+        'priceBySize': {'small': 100.0, 'medium': 150.0, 'large': 200.0}
+      },
+      {
+        'name': 'Extra Chicken',
+        'price': 150.0, // Default medium
+        'priceBySize': {'small': 100.0, 'medium': 150.0, 'large': 200.0}
+      },
+    ];
+
+    final List<Map<String, dynamic>> menuItems = [
+      // ── PIZZA - TRADITIONAL ──────────────────────────────────────────
+      ...['Cheese Lovers', 'Chicken Tikka', 'Chicken Fajita', 'Chicken Tandoori', 'Half N Half Pizza'].map((name) => {
+        FirestoreConstants.name: name,
+        FirestoreConstants.category: 'Pizza (Traditional)',
+        FirestoreConstants.description: 'Traditional $name with fresh ingredients',
+        FirestoreConstants.hasSizes: true,
+        'prices': {'small': 690.0, 'medium': 1090.0, 'large': 1550.0},
+        'addons': cookoozAddons,
+        FirestoreConstants.image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400',
+        FirestoreConstants.isAvailable: true,
+      }),
+      // ── PIZZA - PREMIUM ─────────────────────────────────────────────
+      ...['Creamy Pizza', 'Chicken Supreme', 'Steak Pizza'].map((name) => {
+        FirestoreConstants.name: name,
+        FirestoreConstants.category: 'Pizza (Premium)',
+        FirestoreConstants.description: 'Premium $name with extra toppings',
+        FirestoreConstants.hasSizes: true,
+        'prices': {'small': 790.0, 'medium': 1290.0, 'large': 1750.0},
+        'addons': cookoozAddons,
+        FirestoreConstants.image: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=400',
+        FirestoreConstants.isAvailable: true,
+      }),
+      // ── PIZZA - SIGNATURE ───────────────────────────────────────────
+      ...['Behari Kebab', 'Lasagne Pizza', 'Bonfire Pizza', "CooKoo'z Special"].map((name) => {
+        FirestoreConstants.name: name,
+        FirestoreConstants.category: 'Pizza (Signature)',
+        FirestoreConstants.description: 'Our signature $name recipe',
+        FirestoreConstants.hasSizes: true,
+        'prices': {'medium': 1390.0, 'large': 1950.0},
+        'addons': cookoozAddons,
+        FirestoreConstants.image: 'https://images.unsplash.com/photo-1593560708920-61dd98c46a4e?w=400',
+        FirestoreConstants.isAvailable: true,
+      }),
+
+      // ── MEGA DEALS ──────────────────────────────────────────────────
+      {
+        FirestoreConstants.name: 'Mega Deal 1',
+        FirestoreConstants.category: 'Mega Deals',
+        FirestoreConstants.description: '2 Small Pizza + 1 Ltr Drink',
+        FirestoreConstants.price: 1490.0,
+        FirestoreConstants.image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400',
+        FirestoreConstants.isAvailable: true,
+      },
+      {
+        FirestoreConstants.name: 'Mega Deal 2',
+        FirestoreConstants.category: 'Mega Deals',
+        FirestoreConstants.description: '1 Medium Pizza + 10 Hot Wings + 1 Ltr Drink',
+        FirestoreConstants.price: 1750.0,
+        FirestoreConstants.image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400',
+        FirestoreConstants.isAvailable: true,
+      },
+      {
+        FirestoreConstants.name: 'Mega Deal 3',
+        FirestoreConstants.category: 'Mega Deals',
+        FirestoreConstants.description: '2 Medium Pizza + 1.5 Ltr Drink',
+        FirestoreConstants.price: 2390.0,
+        FirestoreConstants.image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400',
+        FirestoreConstants.isAvailable: true,
+      },
+      {
+        FirestoreConstants.name: 'Mega Deal 4',
+        FirestoreConstants.category: 'Mega Deals',
+        FirestoreConstants.description: '1 Large Pizza + 15 Hot Wings + 1.5 Ltr Drink',
+        FirestoreConstants.price: 2490.0,
+        FirestoreConstants.image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400',
+        FirestoreConstants.isAvailable: true,
+      },
+      {
+        FirestoreConstants.name: 'Mega Deal 5',
+        FirestoreConstants.category: 'Mega Deals',
+        FirestoreConstants.description: '1 Large Pizza + 1 Medium Pizza + 1.5 Ltr Drink',
+        FirestoreConstants.price: 2790.0,
+        FirestoreConstants.image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400',
+        FirestoreConstants.isAvailable: true,
+      },
+      {
+        FirestoreConstants.name: 'Mega Deal 6',
+        FirestoreConstants.category: 'Mega Deals',
+        FirestoreConstants.description: '2 Large Pizza + 1.5 Ltr Drink',
+        FirestoreConstants.price: 3150.0,
+        FirestoreConstants.image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400',
+        FirestoreConstants.isAvailable: true,
+      },
+
+      // ── WRAPS ───────────────────────────────────────────────────────
+      {FirestoreConstants.name: 'Shawarma', FirestoreConstants.price: 250.0, FirestoreConstants.category: 'Wraps'},
+      {FirestoreConstants.name: 'Zinger Shawarma', FirestoreConstants.price: 390.0, FirestoreConstants.category: 'Wraps'},
+      {FirestoreConstants.name: 'Chicken Cheese Shawarma', FirestoreConstants.price: 290.0, FirestoreConstants.category: 'Wraps'},
+      {FirestoreConstants.name: 'Paratha Roll', FirestoreConstants.price: 290.0, FirestoreConstants.category: 'Wraps'},
+      {FirestoreConstants.name: 'Chicken Cheese Paratha Roll', FirestoreConstants.price: 330.0, FirestoreConstants.category: 'Wraps'},
+      {FirestoreConstants.name: 'Zinger Paratha Roll', FirestoreConstants.price: 390.0, FirestoreConstants.category: 'Wraps'},
+      {FirestoreConstants.name: 'Shawarma Platter', FirestoreConstants.price: 490.0, FirestoreConstants.category: 'Wraps'},
+      {FirestoreConstants.name: 'Burrito Wrap', FirestoreConstants.price: 490.0, FirestoreConstants.category: 'Wraps'},
+      {FirestoreConstants.name: 'Mexican Wrap', FirestoreConstants.price: 490.0, FirestoreConstants.category: 'Wraps'},
+
+      // ── SPECIALITIES ────────────────────────────────────────────────
+      {FirestoreConstants.name: 'Pizza Paratha', FirestoreConstants.price: 550.0, FirestoreConstants.category: 'Specialities'},
+      {FirestoreConstants.name: 'Alfredo Pasta', FirestoreConstants.price: 590.0, FirestoreConstants.category: 'Specialities'},
+      {FirestoreConstants.name: 'White Sauce Chicken Steak', FirestoreConstants.price: 990.0, FirestoreConstants.category: 'Specialities'},
+      {FirestoreConstants.name: 'Finger Fish', FirestoreConstants.price: 990.0, FirestoreConstants.category: 'Specialities'},
+      {FirestoreConstants.name: 'Grilled Sandwich', FirestoreConstants.price: 550.0, FirestoreConstants.category: 'Specialities'},
+      {FirestoreConstants.name: 'Pizza Sandwich', FirestoreConstants.price: 490.0, FirestoreConstants.category: 'Specialities'},
+      {FirestoreConstants.name: 'Behari Roll', FirestoreConstants.price: 390.0, FirestoreConstants.category: 'Specialities'},
+      {FirestoreConstants.name: 'Molten Lava (with Ice Cream)', FirestoreConstants.price: 590.0, FirestoreConstants.category: 'Specialities'},
+
+      // ── FRIES ───────────────────────────────────────────────────────
+      {
+        FirestoreConstants.name: 'French Fries',
+        FirestoreConstants.category: 'Fries',
+        FirestoreConstants.hasSizes: true,
+        'prices': {'regular': 290.0, 'family': 550.0},
+      },
+      {
+        FirestoreConstants.name: 'Masala Fries',
+        FirestoreConstants.category: 'Fries',
+        FirestoreConstants.hasSizes: true,
+        'prices': {'regular': 290.0, 'family': 550.0},
+      },
+      {
+        FirestoreConstants.name: 'Pizza Fries',
+        FirestoreConstants.category: 'Fries',
+        FirestoreConstants.hasSizes: true,
+        'prices': {'regular': 290.0, 'family': 550.0},
+      },
+      {
+        FirestoreConstants.name: 'Loaded Fries',
+        FirestoreConstants.category: 'Fries',
+        FirestoreConstants.price: 650.0,
+      },
+
+      // ── SIDE ORDERS ─────────────────────────────────────────────────
+      {
+        FirestoreConstants.name: 'Hot Wings',
+        FirestoreConstants.category: 'Side Orders',
+        FirestoreConstants.hasSizes: true,
+        'prices': {'5 pcs': 320.0, '10 pcs': 590.0},
+      },
+      {
+        FirestoreConstants.name: 'Baked Wings',
+        FirestoreConstants.category: 'Side Orders',
+        FirestoreConstants.hasSizes: true,
+        'prices': {'5 pcs': 340.0, '10 pcs': 650.0},
+      },
+      {
+        FirestoreConstants.name: 'Chicken Nuggets',
+        FirestoreConstants.category: 'Side Orders',
+        FirestoreConstants.hasSizes: true,
+        'prices': {'5 pcs': 290.0, '10 pcs': 550.0},
+      },
+      {
+        FirestoreConstants.name: 'Hot Shots',
+        FirestoreConstants.category: 'Side Orders',
+        FirestoreConstants.price: 690.0,
+        FirestoreConstants.description: '10 Pcs',
+      },
+      {FirestoreConstants.name: 'Crispy Chicken (1 Piece)', FirestoreConstants.price: 250.0, FirestoreConstants.category: 'Side Orders'},
+      {FirestoreConstants.name: 'Crispy Chicken (5 Pieces)', FirestoreConstants.price: 1200.0, FirestoreConstants.category: 'Side Orders'},
+      {FirestoreConstants.name: 'Dip Sauce', FirestoreConstants.price: 100.0, FirestoreConstants.category: 'Side Orders'},
+      {FirestoreConstants.name: 'Cheese Slice', FirestoreConstants.price: 150.0, FirestoreConstants.category: 'Side Orders'},
+
+      // ── BURGERS ─────────────────────────────────────────────────────
+      {FirestoreConstants.name: 'Zinger Burger', FirestoreConstants.price: 390.0, FirestoreConstants.category: 'Burger'},
+      {FirestoreConstants.name: 'Zinger Tower Burger', FirestoreConstants.price: 490.0, FirestoreConstants.category: 'Burger'},
+      {FirestoreConstants.name: 'Patty Burger', FirestoreConstants.price: 290.0, FirestoreConstants.category: 'Burger'},
+      {FirestoreConstants.name: 'Grilled Burger', FirestoreConstants.price: 490.0, FirestoreConstants.category: 'Burger'},
+      {FirestoreConstants.name: "CooKoo'z Special Burger", FirestoreConstants.price: 590.0, FirestoreConstants.category: 'Burger'},
+      {FirestoreConstants.name: 'Royal Grilled Burger', FirestoreConstants.price: 590.0, FirestoreConstants.category: 'Burger'},
+      {FirestoreConstants.name: 'Fish Burger', FirestoreConstants.price: 650.0, FirestoreConstants.category: 'Burger'},
+
+      // ── BURGER DEALS ───────────────────────────────────────────────
+      {FirestoreConstants.name: 'Burger Deal 1', FirestoreConstants.description: '1 Zinger Burger + 345ml Drink', FirestoreConstants.price: 450.0, FirestoreConstants.category: 'Burger Deals'},
+      {FirestoreConstants.name: 'Burger Deal 2', FirestoreConstants.description: '1 Patty Burger + 345ml Drink', FirestoreConstants.price: 350.0, FirestoreConstants.category: 'Burger Deals'},
+      {FirestoreConstants.name: 'Burger Deal 3', FirestoreConstants.description: '1 Zinger Burger + 345ml Drink + 1 Reg. Fries', FirestoreConstants.price: 690.0, FirestoreConstants.category: 'Burger Deals'},
+      {FirestoreConstants.name: 'Burger Deal 4', FirestoreConstants.description: '1 Behari Roll + 345ml Drink', FirestoreConstants.price: 430.0, FirestoreConstants.category: 'Burger Deals'},
+      {FirestoreConstants.name: 'Burger Deal 5', FirestoreConstants.description: '5 Hot Wings + 345ml Drink', FirestoreConstants.price: 360.0, FirestoreConstants.category: 'Burger Deals'},
+      {FirestoreConstants.name: 'Burger Deal 6', FirestoreConstants.description: '10 Hot Wings + 345ml Drink', FirestoreConstants.price: 630.0, FirestoreConstants.category: 'Burger Deals'},
+      {FirestoreConstants.name: 'Burger Deal 7', FirestoreConstants.description: '1 Zinger Burger + 5 Hot Wings + 1 Reg. Fries + 345ml Drink', FirestoreConstants.price: 990.0, FirestoreConstants.category: 'Burger Deals'},
+      {FirestoreConstants.name: 'Burger Deal 8', FirestoreConstants.description: '5 Zinger Burger + 1.5 Ltr Drink', FirestoreConstants.price: 1990.0, FirestoreConstants.category: 'Burger Deals'},
+      {FirestoreConstants.name: 'Burger Deal 9', FirestoreConstants.description: '2 Zinger Burger + 1 Drink 500ml', FirestoreConstants.price: 1090.0, FirestoreConstants.category: 'Burger Deals'},
+      {FirestoreConstants.name: 'Burger Deal 10', FirestoreConstants.description: '1 Pizza Paratha + 345ml Drink', FirestoreConstants.price: 590.0, FirestoreConstants.category: 'Burger Deals'},
+      {FirestoreConstants.name: 'Burger Deal 11', FirestoreConstants.description: '1 Grilled Burger + 345ml Drink', FirestoreConstants.price: 530.0, FirestoreConstants.category: 'Burger Deals'},
+      {FirestoreConstants.name: 'Burger Deal 12', FirestoreConstants.description: '2 Grilled Burger + 1 Drink 500ml', FirestoreConstants.price: 1050.0, FirestoreConstants.category: 'Burger Deals'},
+
+      // ── SHAKES & DESSERTS ──────────────────────────────────────────
+      {FirestoreConstants.name: 'Cold Coffee', FirestoreConstants.price: 380.0, FirestoreConstants.category: 'Shakes & Desserts'},
+      {FirestoreConstants.name: 'Oreo Shake', FirestoreConstants.price: 350.0, FirestoreConstants.category: 'Shakes & Desserts'},
+      {FirestoreConstants.name: 'Kitkat Shake', FirestoreConstants.price: 390.0, FirestoreConstants.category: 'Shakes & Desserts'},
+      {FirestoreConstants.name: 'Mango Madness Shake', FirestoreConstants.price: 350.0, FirestoreConstants.category: 'Shakes & Desserts'},
+      {FirestoreConstants.name: 'Strawberry Shake', FirestoreConstants.price: 350.0, FirestoreConstants.category: 'Shakes & Desserts'},
+      {FirestoreConstants.name: 'Khoya Khajoor Shake', FirestoreConstants.price: 380.0, FirestoreConstants.category: 'Shakes & Desserts'},
+      {FirestoreConstants.name: 'Double Chocolate Shake', FirestoreConstants.price: 380.0, FirestoreConstants.category: 'Shakes & Desserts'},
+      {FirestoreConstants.name: 'Brownie with Ice Cream', FirestoreConstants.price: 450.0, FirestoreConstants.category: 'Shakes & Desserts'},
+      {FirestoreConstants.name: "CooKoo'z Sp. Ice Cream (2 scoops)", FirestoreConstants.price: 200.0, FirestoreConstants.category: 'Shakes & Desserts'},
+      {FirestoreConstants.name: "CooKoo'z Sp. Ice Cream (1 scoop)", FirestoreConstants.price: 120.0, FirestoreConstants.category: 'Shakes & Desserts'},
+
+      // ── HOT BAR ─────────────────────────────────────────────────────
+      {FirestoreConstants.name: 'Kashmiri Tea', FirestoreConstants.price: 160.0, FirestoreConstants.category: 'Hot Bar'},
+      {FirestoreConstants.name: 'Karak Chai', FirestoreConstants.price: 190.0, FirestoreConstants.category: 'Hot Bar'},
+      {FirestoreConstants.name: 'Cardamom Chai', FirestoreConstants.price: 230.0, FirestoreConstants.category: 'Hot Bar'},
+      {FirestoreConstants.name: 'Cappuccino Coffee', FirestoreConstants.price: 250.0, FirestoreConstants.category: 'Hot Bar'},
+      {FirestoreConstants.name: 'Coffee Latte', FirestoreConstants.price: 250.0, FirestoreConstants.category: 'Hot Bar'},
+
+      // ── DRINKS & BEVERAGES ──────────────────────────────────────────
+      {FirestoreConstants.name: 'Fresh Lime', FirestoreConstants.price: 190.0, FirestoreConstants.category: 'Drinks & Beverages'},
+      {FirestoreConstants.name: 'Mint Margarita', FirestoreConstants.price: 250.0, FirestoreConstants.category: 'Drinks & Beverages'},
+      {FirestoreConstants.name: 'Tin Pack (Slim)', FirestoreConstants.price: 120.0, FirestoreConstants.category: 'Drinks & Beverages'},
+      {FirestoreConstants.name: 'Cold Drink (Regular)', FirestoreConstants.price: 70.0, FirestoreConstants.category: 'Drinks & Beverages'},
+      {FirestoreConstants.name: 'Cold Drink (345ml)', FirestoreConstants.price: 80.0, FirestoreConstants.category: 'Drinks & Beverages'},
+      {FirestoreConstants.name: 'Cold Drink (500ml)', FirestoreConstants.price: 130.0, FirestoreConstants.category: 'Drinks & Beverages'},
+      {FirestoreConstants.name: 'Cold Drink (1 Liter)', FirestoreConstants.price: 150.0, FirestoreConstants.category: 'Drinks & Beverages'},
+      {FirestoreConstants.name: 'Cold Drink (1.5 Liter)', FirestoreConstants.price: 200.0, FirestoreConstants.category: 'Drinks & Beverages'},
+      {FirestoreConstants.name: 'Mineral Water (500ml)', FirestoreConstants.price: 70.0, FirestoreConstants.category: 'Drinks & Beverages'},
+      {FirestoreConstants.name: 'Mineral Water (1.5 Liter)', FirestoreConstants.price: 110.0, FirestoreConstants.category: 'Drinks & Beverages'},
+    ];
+
+    int batchCount = 0;
+    WriteBatch batch = _db.batch();
+    
+    for (var item in menuItems) {
+      final docRef = menuRef.doc();
+      batch.set(docRef, {
+        ...item,
+        'restaurantId': targetId,
+        'restaurantName': targetName,
+        FirestoreConstants.adminId: adminId,
+        FirestoreConstants.createdAt: FieldValue.serverTimestamp(),
+        FirestoreConstants.rating: 0.0,
+        'totalReviews': 0,
+        FirestoreConstants.description: item[FirestoreConstants.description] ?? 'Fresh & Delicious',
+        FirestoreConstants.image: item[FirestoreConstants.image] ?? 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400',
+        FirestoreConstants.price: item[FirestoreConstants.price] ?? 0.0,
+      });
+      batchCount++;
+      
+      if (batchCount == 500) {
+        await batch.commit();
+        batch = _db.batch();
+        batchCount = 0;
+      }
+    }
+    
+    if (batchCount > 0) {
+      await batch.commit();
+    }
+    
+    debugPrint("✅ Successfully uploaded ${menuItems.length} menu items for $targetName!");
   }
 
   Stream<Map<String, dynamic>> getDashboardStats({String? adminId, String? restaurantId}) {

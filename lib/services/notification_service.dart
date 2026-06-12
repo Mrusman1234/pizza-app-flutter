@@ -184,9 +184,9 @@ class NotificationService {
           arguments: orderId,
         );
       } else {
-        // Regular customers go to the tracking view
+        // Regular customers go to the order details view
         navigator.pushNamed(
-          RouteNames.orderTracking,
+          RouteNames.orderDetails,
           arguments: orderId,
         );
       }

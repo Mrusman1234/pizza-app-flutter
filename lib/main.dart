@@ -29,7 +29,6 @@ import 'core/constants/app_strings.dart';
 
 import 'services/auth_service.dart';
 import 'services/notification_service.dart';
-import 'widgets/common/connectivity_wrapper.dart';
 
 /// Global key — allows navigation from anywhere (e.g. NotificationService)
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -63,9 +62,13 @@ void main() async {
 
   if (kIsWeb) {
     if (recaptchaSiteKey.isNotEmpty) {
-      await FirebaseAppCheck.instance.activate(
-        webProvider: ReCaptchaV3Provider(recaptchaSiteKey),
-      );
+      try {
+        await FirebaseAppCheck.instance.activate(
+          webProvider: ReCaptchaV3Provider(recaptchaSiteKey),
+        );
+      } catch (e) {
+        debugPrint('⚠️  App Check: activation failed: $e');
+      }
     } else {
       // Web without a key: App Check stays inactive (fine for local dev)
       debugPrint('⚠️  App Check: no reCAPTCHA key set — skipping web activation.');
@@ -133,7 +136,7 @@ class MyApp extends StatelessWidget {
       initialRoute: RouteNames.splash,
       routes: AppRoutes.routes,
       builder: (context, child) {
-        return ConnectivityWrapper(child: child!);
+        return child!;
       },
     );
   }

@@ -4,6 +4,8 @@ class PizzaModel {
   final String description;
   final String imageUrl;
   final double price;
+  final Map<String, double>? prices;
+  final List<AddonModel>? addons;
   final String restaurantId;
   final String? restaurantName;
   final String category;
@@ -19,6 +21,8 @@ class PizzaModel {
     required this.description,
     required this.imageUrl,
     required this.price,
+    this.prices,
+    this.addons,
     required this.restaurantId,
     this.restaurantName,
     required this.category,
@@ -36,6 +40,8 @@ class PizzaModel {
       'description': description,
       'imageUrl': imageUrl,
       'price': price,
+      'prices': prices,
+      'addons': addons?.map((e) => e.toMap()).toList(),
       'restaurantId': restaurantId,
       'restaurantName': restaurantName,
       'category': category,
@@ -48,12 +54,21 @@ class PizzaModel {
   }
 
   factory PizzaModel.fromMap(Map<String, dynamic> map) {
+    Map<String, double>? pricesMap;
+    if (map['prices'] != null) {
+      pricesMap = (map['prices'] as Map<String, dynamic>).map(
+        (key, value) => MapEntry(key, (value as num).toDouble()),
+      );
+    }
+
     return PizzaModel(
       id: map['id'] ?? '',
       name: map['name'] ?? '',
       description: map['description'] ?? '',
       imageUrl: map['imageUrl'] ?? '',
       price: (map['price'] as num? ?? 0.0).toDouble(),
+      prices: pricesMap,
+      addons: (map['addons'] as List?)?.map((e) => AddonModel.fromMap(e)).toList(),
       restaurantId: map['restaurantId'] ?? '',
       restaurantName: map['restaurantName'],
       category: map['category'] ?? '',
@@ -71,6 +86,8 @@ class PizzaModel {
     String? description,
     String? imageUrl,
     double? price,
+    Map<String, double>? prices,
+    List<AddonModel>? addons,
     String? restaurantId,
     String? restaurantName,
     String? category,
@@ -86,6 +103,8 @@ class PizzaModel {
       description: description ?? this.description,
       imageUrl: imageUrl ?? this.imageUrl,
       price: price ?? this.price,
+      prices: prices ?? this.prices,
+      addons: addons ?? this.addons,
       restaurantId: restaurantId ?? this.restaurantId,
       restaurantName: restaurantName ?? this.restaurantName,
       category: category ?? this.category,
@@ -94,6 +113,30 @@ class PizzaModel {
       rating: rating ?? this.rating,
       totalReviews: totalReviews ?? this.totalReviews,
       isBestSeller: isBestSeller ?? this.isBestSeller,
+    );
+  }
+}
+
+class AddonModel {
+  final String name;
+  final double price;
+  final Map<String, double>? priceBySize;
+
+  AddonModel({required this.name, required this.price, this.priceBySize});
+
+  Map<String, dynamic> toMap() {
+    return {
+      'name': name,
+      'price': price,
+      'priceBySize': priceBySize,
+    };
+  }
+
+  factory AddonModel.fromMap(Map<String, dynamic> map) {
+    return AddonModel(
+      name: map['name'] ?? '',
+      price: (map['price'] as num? ?? 0.0).toDouble(),
+      priceBySize: (map['priceBySize'] as Map?)?.map((k, v) => MapEntry(k.toString(), (v as num).toDouble())),
     );
   }
 }

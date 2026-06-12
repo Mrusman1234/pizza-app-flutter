@@ -2,16 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../models/pizza_model.dart';
-import '../../models/restaurant_model.dart';
 import '../../providers/cart_provider.dart';
 import '../../providers/auth_provider.dart';
-import '../../providers/restaurant_provider.dart';
-import '../../routes/route_names.dart';
 import '../../widgets/custom_button.dart';
 import '../../widgets/custom_textfield.dart';
 import '../../services/firestore_service.dart';
-import '../../core/constants/firestore_constants.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 class PizzaDetailScreen extends StatefulWidget {
   const PizzaDetailScreen({super.key});
@@ -21,16 +16,19 @@ class PizzaDetailScreen extends StatefulWidget {
 }
 
 class _PizzaDetailScreenState extends State<PizzaDetailScreen> {
-  String? selectedSize;
+  String selectedSize = 'Small';
+  bool _sizeInitialized = false;
   int quantity = 1;
   final TextEditingController _instructionsController = TextEditingController();
 
-  final Map<String, bool> extraToppings = {
+  Map<String, bool> extraToppings = {
     'Extra Cheese': false,
     'Mushrooms': false,
     'Olives': false,
     'Onions': false,
   };
+
+  bool _addonsInitialized = false;
 
   @override
   void dispose() {
@@ -38,16 +36,72 @@ class _PizzaDetailScreenState extends State<PizzaDetailScreen> {
     super.dispose();
   }
 
-  double _calculatePrice(double basePrice, String category) {
-    double price = basePrice;
+  void _initializeSize(PizzaModel pizza) {
+    if (_sizeInitialized) return;
+    if (pizza.prices != null && pizza.prices!.isNotEmpty) {
+      if (pizza.prices!.containsKey('small')) {
+        selectedSize = 'SMALL';
+      } else if (pizza.prices!.containsKey('medium')) {
+        selectedSize = 'MEDIUM';
+      } else if (pizza.prices!.containsKey('regular')) {
+        selectedSize = 'REGULAR';
+      } else {
+        selectedSize = pizza.prices!.keys.first.toUpperCase();
+      }
+    }
+    _sizeInitialized = true;
+  }
+
+  void _initializeAddons(PizzaModel pizza) {
+    if (_addonsInitialized) return;
+    if (pizza.addons != null && pizza.addons!.isNotEmpty) {
+      extraToppings = {for (var a in pizza.addons!) a.name: false};
+    }
+    _addonsInitialized = true;
+  }
+
+  double _getUnitPrice(PizzaModel pizza) {
+    _initializeSize(pizza);
+    _initializeAddons(pizza);
+    if (pizza.prices != null && pizza.prices!.containsKey(selectedSize.toLowerCase())) {
+      double price = pizza.prices![selectedSize.toLowerCase()]!;
+      
+      if (pizza.addons != null && pizza.addons!.isNotEmpty) {
+        for (var addon in pizza.addons!) {
+          if (extraToppings[addon.name] == true) {
+            if (addon.priceBySize != null && addon.priceBySize!.containsKey(selectedSize.toLowerCase())) {
+              price += addon.priceBySize![selectedSize.toLowerCase()]!;
+            } else {
+              price += addon.price;
+            }
+          }
+        }
+      } else {
+        extraToppings.forEach((key, value) {
+          if (value) {
+            price += (key == 'Extra Cheese' ? 100 : 50);
+          }
+        });
+      }
+      return price;
+    }
+
+    double price = pizza.price;
     if (selectedSize == 'Medium') price += 200;
     if (selectedSize == 'Large') price += 400;
+    if (selectedSize == 'Extra Large (XL)') price += 600;
     
     extraToppings.forEach((key, value) {
-      if (value) price += 50;
+      if (value) {
+        price += (key == 'Extra Cheese' ? 100 : 50);
+      }
     });
     
-    return price * quantity;
+    return price;
+  }
+
+  double _calculateTotalPrice(PizzaModel pizza) {
+    return _getUnitPrice(pizza) * quantity;
   }
 
   @override
@@ -291,47 +345,89 @@ class _PizzaDetailScreenState extends State<PizzaDetailScreen> {
                               const SizedBox(height: 24),
                               Text("Select Size", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor)),
                               const SizedBox(height: 16),
-                              Row(
-                                children: ['Small', 'Medium', 'Large'].map((size) {
+                              GridView.count(
+                                crossAxisCount: 2,
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                mainAxisSpacing: 12,
+                                crossAxisSpacing: 12,
+                                childAspectRatio: 2.5,
+                                children: (pizza.prices != null && pizza.prices!.isNotEmpty)
+                                  ? pizza.prices!.keys.map((size) {
+                                      bool isSelected = selectedSize.toLowerCase() == size.toLowerCase();
+                                      double sizePrice = pizza.prices![size]!;
+
+                                      return GestureDetector(
+                                        onTap: () => setState(() => selectedSize = size.toUpperCase()),
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            color: isSelected ? AppColors.primary : (isDark ? AppColors.card : Colors.white),
+                                            borderRadius: BorderRadius.circular(16),
+                                            border: Border.all(
+                                              color: isSelected ? AppColors.primary : (isDark ? AppColors.border : Colors.grey[300]!),
+                                            ),
+                                          ),
+                                          child: Column(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Text(
+                                                size.toUpperCase(),
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 13,
+                                                  color: isSelected ? Colors.white : textColor,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                "Rs. ${sizePrice.toStringAsFixed(0)}",
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  color: isSelected ? Colors.white70 : Colors.grey,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    }).toList()
+                                  : ['Small', 'Medium', 'Large', 'Extra Large (XL)'].map((size) {
                                   bool isSelected = selectedSize == size;
                                   double sizePrice = pizza.price;
                                   if (size == 'Medium') sizePrice += 200;
                                   if (size == 'Large') sizePrice += 400;
+                                  if (size == 'Extra Large (XL)') sizePrice += 600;
 
-                                  return Expanded(
-                                    child: GestureDetector(
-                                      onTap: () => setState(() => selectedSize = size),
-                                      child: Container(
-                                        margin: EdgeInsets.only(
-                                          right: size == 'Large' ? 0 : 12,
+                                  return GestureDetector(
+                                    onTap: () => setState(() => selectedSize = size),
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: isSelected ? AppColors.primary : (isDark ? AppColors.card : Colors.white),
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(
+                                          color: isSelected ? AppColors.primary : (isDark ? AppColors.border : Colors.grey[300]!),
                                         ),
-                                        padding: const EdgeInsets.symmetric(vertical: 16),
-                                        decoration: BoxDecoration(
-                                          color: isSelected ? AppColors.primary : (isDark ? AppColors.card : Colors.white),
-                                          borderRadius: BorderRadius.circular(16),
-                                          border: Border.all(
-                                            color: isSelected ? AppColors.primary : (isDark ? AppColors.border : Colors.grey[300]!),
+                                      ),
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Text(
+                                            size,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13,
+                                              color: isSelected ? Colors.white : textColor,
+                                            ),
                                           ),
-                                        ),
-                                        child: Column(
-                                          children: [
-                                            Text(
-                                              size,
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                color: isSelected ? Colors.white : textColor,
-                                              ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            "Rs. ${sizePrice.toStringAsFixed(0)}",
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: isSelected ? Colors.white70 : Colors.grey,
                                             ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              "Rs. ${sizePrice.toStringAsFixed(0)}",
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color: isSelected ? Colors.white70 : Colors.grey,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   );
@@ -358,11 +454,23 @@ class _PizzaDetailScreenState extends State<PizzaDetailScreen> {
                               const SizedBox(height: 8),
                               Column(
                                 children: extraToppings.keys.map((topping) {
+                                  double addonPrice = 0;
+                                  if (pizza.addons != null) {
+                                    final addon = pizza.addons!.firstWhere((a) => a.name == topping, orElse: () => AddonModel(name: topping, price: 0));
+                                    if (addon.priceBySize != null && addon.priceBySize!.containsKey(selectedSize.toLowerCase())) {
+                                      addonPrice = addon.priceBySize![selectedSize.toLowerCase()]!;
+                                    } else {
+                                      addonPrice = addon.price;
+                                    }
+                                  } else {
+                                    addonPrice = (topping == 'Extra Cheese' ? 100 : 50);
+                                  }
+
                                   return Theme(
                                     data: Theme.of(context).copyWith(unselectedWidgetColor: isDark ? Colors.white54 : Colors.grey),
                                     child: CheckboxListTile(
                                       title: Text(topping, style: TextStyle(color: textColor, fontSize: 15)),
-                                      subtitle: Text(topping == 'Extra Cheese' ? '+Rs. 100' : '+Rs. 50', style: const TextStyle(color: AppColors.primary, fontSize: 12)),
+                                      subtitle: Text('+Rs. ${addonPrice.toStringAsFixed(0)}', style: const TextStyle(color: AppColors.primary, fontSize: 12)),
                                       value: extraToppings[topping],
                                       activeColor: AppColors.primary,
                                       checkColor: Colors.white,
@@ -433,26 +541,28 @@ class _PizzaDetailScreenState extends State<PizzaDetailScreen> {
                       const SizedBox(width: 16),
                       Expanded(
                         child: CustomButton(
-                          text: isRestaurantEnabled ? "Add to Cart • Rs. ${_calculatePrice(pizza.price, pizza.category).toStringAsFixed(0)}" : "Currently Unavailable",
+                          text: isRestaurantEnabled ? "Add to Cart • Rs. ${_calculateTotalPrice(pizza).toStringAsFixed(0)}" : "Currently Unavailable",
                           onPressed: isRestaurantEnabled ? () {
-                            if (selectedSize == null) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text("Please select a size")),
-                              );
-                              return;
-                            }
+                            final selectedToppings = extraToppings.entries
+                                .where((e) => e.value)
+                                .map((e) => e.key)
+                                .toList();
+
                             context.read<CartProvider>().addToCart(
                                   pizza,
                                   quantity: quantity,
                                   size: selectedSize,
+                                  extraToppings: selectedToppings.isNotEmpty ? selectedToppings : null,
+                                  customPrice: _getUnitPrice(pizza),
                                   instructions: _instructionsController.text,
                                   userId: authProvider.user?.uid,
                                 );
                             Navigator.pop(context);
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text("${pizza.name} added to cart!"),
-                                backgroundColor: AppColors.primary,
+                                content: Text("${pizza.name} ($selectedSize) added to cart!"),
+                                backgroundColor: AppColors.green,
+                                behavior: SnackBarBehavior.floating,
                               ),
                             );
                           } : null,

@@ -39,6 +39,7 @@ ios/Flutter/flutter_export_environment.sh
 
 # Environment variables (Sensitive!)
 .env
+pizza_db/
 
 # Temporary/Local files
 order_tracking_raw.txt

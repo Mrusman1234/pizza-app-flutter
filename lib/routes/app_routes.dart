@@ -5,6 +5,7 @@ import '../providers/auth_provider.dart';
 
 // ✅ ALL imports fixed — flat screens/ folder (no subfolders)
 import '../screens/splash_screen.dart';
+import '../screens/onboarding_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/signup_screen.dart';
 import '../screens/home_screen.dart';
@@ -12,7 +13,6 @@ import '../screens/cart_screen.dart';
 import '../screens/profile_screen.dart';
 import '../screens/checkout_screen.dart';
 import '../screens/my_orders_screen.dart';
-import '../screens/order_tracking_screen.dart';
 import '../screens/order_details_screen.dart';
 import '../screens/address_management_screen.dart';
 import '../screens/add_address_screen.dart';
@@ -49,6 +49,8 @@ import '../screens/order_success_screen.dart';
 import '../screens/chat_screen.dart';
 import '../screens/store_product_management_screen.dart';
 import '../screens/wallet_screen.dart';
+import '../screens/privacy_policy_screen.dart';
+import '../screens/terms_of_service_screen.dart';
 import '../models/restaurant_model.dart';
 import 'route_names.dart';
 
@@ -76,6 +78,7 @@ class AppRoutes {
   static Map<String, WidgetBuilder> get routes => {
 
     RouteNames.splash: (_) => const SplashScreen(),
+    RouteNames.onboarding: (_) => const OnboardingScreen(),
     RouteNames.login: (_) => const LoginScreen(),
     RouteNames.adminLogin: (_) => const AdminLoginScreen(),
     RouteNames.forgotPassword: (_) => const ForgotPasswordScreen(),
@@ -88,14 +91,6 @@ class AppRoutes {
     RouteNames.myOrders: (_) => const MyOrdersScreen(),
     RouteNames.settings: (_) => const SettingsScreen(),
     RouteNames.helpCenter: (_) => const HelpCenterScreen(),
-
-    RouteNames.orderTracking: (context) {
-      final args = ModalRoute.of(context)!.settings.arguments;
-      final orderId = args is String
-          ? args
-          : (args as Map<String, dynamic>?)?['orderId'] as String? ?? '';
-      return OrderTrackingScreen(orderId: orderId);
-    },
 
     RouteNames.orderDetails: (context) {
       final args = ModalRoute.of(context)!.settings.arguments;
@@ -181,6 +176,8 @@ class AppRoutes {
       );
     },
     RouteNames.wallet: (context) => const WalletScreen(),
+    RouteNames.privacyPolicy: (context) => const PrivacyPolicyScreen(),
+    RouteNames.termsOfService: (context) => const TermsOfServiceScreen(),
   };
 }
 

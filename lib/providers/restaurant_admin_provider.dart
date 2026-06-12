@@ -22,6 +22,7 @@ class RestaurantAdminProvider with ChangeNotifier {
   List<double> _revenueTrend = [];
   List<int> _orderTrend = [];
   List<String> _trendLabels = [];
+  List<Map<String, dynamic>> _topSellingItems = [];
 
   // ── Getters ───────────────────────────────────────────────────────────────
   RestaurantAdminModel? get adminModel => _adminModel;
@@ -37,6 +38,7 @@ class RestaurantAdminProvider with ChangeNotifier {
   List<double> get revenueTrend => _revenueTrend;
   List<int> get orderTrend => _orderTrend;
   List<String> get trendLabels => _trendLabels;
+  List<Map<String, dynamic>> get topSellingItems => _topSellingItems;
 
   String get restaurantId => _adminModel?.assignedRestaurantId ?? '';
   String get restaurantName => _adminModel?.assignedRestaurantName ?? '';
@@ -103,6 +105,7 @@ class RestaurantAdminProvider with ChangeNotifier {
       _menuItemCount = menuSnap.docs.length;
 
       await _fetchTrends();
+      await _fetchTopSellingItems();
 
       notifyListeners();
     } catch (e) {
@@ -148,6 +151,47 @@ class RestaurantAdminProvider with ChangeNotifier {
       }
     } catch (e) {
       debugPrint('RestaurantAdminProvider._fetchTrends error: $e');
+    }
+  }
+
+  Future<void> _fetchTopSellingItems() async {
+    if (_adminModel == null) return;
+    final restId = _adminModel!.assignedRestaurantId;
+
+    try {
+      final snap = await _db
+          .collection(FirestoreConstants.orders)
+          .where(FirestoreConstants.restaurantId, isEqualTo: restId)
+          .where(FirestoreConstants.status, isEqualTo: FirestoreConstants.statusDelivered)
+          .limit(100)
+          .get();
+
+      Map<String, int> productCounts = {};
+      Map<String, String> productNames = {};
+
+      for (var doc in snap.docs) {
+        final items = doc.data()[FirestoreConstants.items] as List?;
+        if (items != null) {
+          for (var item in items) {
+            final name = item[FirestoreConstants.name] as String?;
+            if (name != null) {
+              final String id = item['pizzaId'] as String? ?? name;
+              productCounts[id] = (productCounts[id] ?? 0) + (item[FirestoreConstants.quantity] as int? ?? 1);
+              productNames[id] = name;
+            }
+          }
+        }
+      }
+
+      var sortedKeys = productCounts.keys.toList()
+        ..sort((a, b) => productCounts[b]!.compareTo(productCounts[a]!));
+
+      _topSellingItems = sortedKeys.take(5).map((id) => {
+        'name': productNames[id] ?? 'Unknown',
+        'count': productCounts[id] ?? 0,
+      }).toList();
+    } catch (e) {
+      debugPrint('RestaurantAdminProvider._fetchTopSellingItems error: $e');
     }
   }
 

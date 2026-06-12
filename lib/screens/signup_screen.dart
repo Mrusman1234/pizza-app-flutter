@@ -25,6 +25,7 @@ class _SignupScreenState extends State<SignupScreen> {
 
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+  bool _agreedToTerms = false;
   String _selectedLanguage = 'EN';
 
   // Password Rules State
@@ -63,6 +64,16 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   Future<void> _handleSignup() async {
+    if (!_agreedToTerms) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please agree to the Terms of Service & Privacy Policy'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     if (_formKey.currentState!.validate()) {
       final authProvider = Provider.of<AppAuthProvider>(context, listen: false);
 
@@ -231,7 +242,41 @@ class _SignupScreenState extends State<SignupScreen> {
                     ),
                   ),
 
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 24),
+
+                  /// Terms and Conditions
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: _agreedToTerms,
+                        activeColor: AppColors.primary,
+                        onChanged: (val) => setState(() => _agreedToTerms = val ?? false),
+                      ),
+                      Expanded(
+                        child: RichText(
+                          text: TextSpan(
+                            text: 'I agree to the ',
+                            style: TextStyle(color: isDark ? AppColors.subtle : Colors.grey.shade600, fontSize: 13),
+                            children: [
+                              TextSpan(
+                                text: 'Terms of Service',
+                                style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold),
+                                recognizer: TapGestureRecognizer()..onTap = () => Navigator.pushNamed(context, RouteNames.termsOfService),
+                              ),
+                              const TextSpan(text: ' & '),
+                              TextSpan(
+                                text: 'Privacy Policy',
+                                style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold),
+                                recognizer: TapGestureRecognizer()..onTap = () => Navigator.pushNamed(context, RouteNames.privacyPolicy),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
 
                   /// Create Button
                   CustomButton(

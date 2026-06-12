@@ -112,7 +112,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
     );
 
     if (verified == true) {
-      await _firestoreService.completeOrder(orderId, context.read<AppAuthProvider>().user!.uid);
+      if (!context.mounted) return;
+      final uid = context.read<AppAuthProvider>().user!.uid;
+      await _firestoreService.completeOrder(orderId, uid);
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Delivery Completed!'), backgroundColor: Colors.green));
     }
   }
@@ -206,7 +208,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
                     final newStatus = value ? FirestoreConstants.riderStatusAvailable : FirestoreConstants.riderStatusOffline;
                     if (user?.uid != null) await _firestoreService.updateRiderStatus(user!.uid, newStatus);
                   },
-                  activeColor: AppColors.primary,
+                  activeThumbColor: AppColors.primary,
                 ),
               ],
             ),
@@ -253,7 +255,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.assignment_outlined, size: 64, color: AppColors.muted.withOpacity(0.5)),
+            Icon(Icons.assignment_outlined, size: 64, color: AppColors.muted.withValues(alpha: 0.5)),
             const SizedBox(height: 16),
             Text(emptyMessage, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.subtle, fontSize: 14)),
           ],
@@ -379,7 +381,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6)),
       child: Text(status.toUpperCase(), style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
     );
   }

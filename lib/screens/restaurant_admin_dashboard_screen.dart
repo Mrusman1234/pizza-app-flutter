@@ -90,6 +90,8 @@ class _RestaurantAdminDashboardScreenState
                     const SizedBox(height: 20),
                     _buildChartSection(provider),
                     const SizedBox(height: 20),
+                    _buildTopSellingItems(provider),
+                    const SizedBox(height: 20),
                     _buildQuickActions(admin),
                     const SizedBox(height: 20),
                     _buildRecentOrders(provider),
@@ -433,6 +435,58 @@ class _RestaurantAdminDashboardScreenState
                 color: active ? AppColors.primary : AppColors.subtle,
                 fontSize: 10,
                 fontWeight: FontWeight.w600)),
+      ),
+    );
+  }
+
+  Widget _buildTopSellingItems(RestaurantAdminProvider provider) {
+    if (provider.topSellingItems.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border, width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Top Selling Items',
+              style: TextStyle(color: AppColors.text, fontSize: 14, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 16),
+          ...provider.topSellingItems.map((item) {
+            final double percentage = provider.topSellingItems.first['count'] > 0 
+                ? item['count'] / provider.topSellingItems.first['count'] 
+                : 0;
+            
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(item['name'], style: const TextStyle(color: Colors.white, fontSize: 13)),
+                      Text('${item['count']} sold', style: const TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: percentage,
+                      backgroundColor: AppColors.border,
+                      color: AppColors.primary,
+                      minHeight: 6,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ],
       ),
     );
   }

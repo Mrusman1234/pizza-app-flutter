@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lottie/lottie.dart';
 import '../routes/route_names.dart';
 import '../core/constants/app_colors.dart';
 
@@ -46,21 +47,27 @@ class _OrderSuccessScreenState extends State<OrderSuccessScreen>
             children: [
               const Spacer(),
 
-              // Animated checkmark
+              // Animated checkmark or Lottie
               ScaleTransition(
                 scale: _scaleAnim,
-                child: Container(
-                  width: 120,
-                  height: 120,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.green.withValues(alpha: 0.12),
-                    border: Border.all(color: Colors.green, width: 3),
-                  ),
-                  child: const Icon(
-                    Icons.check_rounded,
-                    color: Colors.green,
-                    size: 64,
+                child: Lottie.asset(
+                  'assets/lottie/success.json',
+                  width: 200,
+                  height: 200,
+                  repeat: false,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    width: 120,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.green.withValues(alpha: 0.12),
+                      border: Border.all(color: Colors.green, width: 3),
+                    ),
+                    child: const Icon(
+                      Icons.check_rounded,
+                      color: Colors.green,
+                      size: 64,
+                    ),
                   ),
                 ),
               ),
@@ -134,7 +141,7 @@ class _OrderSuccessScreenState extends State<OrderSuccessScreen>
 
               const Spacer(),
 
-              // Track order button
+              // View orders button
               SizedBox(
                 width: double.infinity,
                 height: 54,
@@ -146,7 +153,7 @@ class _OrderSuccessScreenState extends State<OrderSuccessScreen>
                   ),
                   icon: const Icon(Icons.receipt_long_rounded, color: Colors.white),
                   label: const Text(
-                    'Track My Order',
+                    'View My Orders',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,

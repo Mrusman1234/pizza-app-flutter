@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 import '../../providers/auth_provider.dart';
 import '../../routes/route_names.dart';
@@ -98,9 +99,17 @@ class _SplashScreenState extends State<SplashScreen> {
   Future<void> _checkLoginStatus() async {
     debugPrint("Splash: Reached 100%, checking login status...");
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final bool onboardingComplete = prefs.getBool('onboarding_complete') ?? false;
+
       await Future.delayed(const Duration(milliseconds: 400));
       
       if (!mounted) return;
+
+      if (!onboardingComplete) {
+        Navigator.pushReplacementNamed(context, RouteNames.onboarding);
+        return;
+      }
       
       final authProvider = Provider.of<AppAuthProvider>(context, listen: false);
       final bool loggedIn = authProvider.isAuthenticated;

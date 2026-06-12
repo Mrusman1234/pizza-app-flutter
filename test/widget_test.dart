@@ -16,7 +16,7 @@ void main() {
     await tester.pumpWidget(const MyApp());
 
     // Verify that our splash screen text is present.
-    expect(find.text('Pizza O Clock'), findsOneWidget);
+    expect(find.text('Velora Eats'), findsOneWidget);
     expect(find.text('VEHARI'), findsOneWidget);
   });
 }

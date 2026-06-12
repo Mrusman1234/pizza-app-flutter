@@ -8,7 +8,6 @@ import '../../routes/route_names.dart';
 import 'edit_profile_screen.dart';
 import 'settings_screen.dart';
 import 'my_orders_screen.dart';
-import 'payment_methods_screen.dart';
 import 'address_management_screen.dart';
 import 'help_center_screen.dart';
 
@@ -247,12 +246,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const HelpCenterScreen())),
                         ),
                         _ActionCard(
+                          icon: Icons.privacy_tip_outlined,
+                          label: "Privacy Policy",
+                          onTap: () => Navigator.pushNamed(context, RouteNames.privacyPolicy),
+                        ),
+                        _ActionCard(
+                          icon: Icons.description_outlined,
+                          label: "Terms of Service",
+                          onTap: () => Navigator.pushNamed(context, RouteNames.termsOfService),
+                        ),
+                        _ActionCard(
                           icon: Icons.info_outline,
-                          label: "About Pizza O Clock",
+                          label: "About Velora Eats",
                           onTap: () {
                             showAboutDialog(
                               context: context,
-                              applicationName: 'Pizza O Clock',
+                              applicationName: 'Velora Eats',
                               applicationVersion: '1.0.0',
                               applicationIcon: Container(
                                 padding: const EdgeInsets.all(8),

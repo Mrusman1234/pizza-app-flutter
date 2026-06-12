@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/firestore_constants.dart';
 import '../../services/firestore_service.dart';
 import '../../widgets/admin_sidebar.dart';
+import '../../widgets/admin_notification_banner.dart';
 import '../../routes/route_names.dart';
+import '../../providers/notification_provider.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -17,7 +20,8 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final FirestoreService _firestoreService = FirestoreService();
-  int _lastPendingCount = 0;
+  int _lastNewOrderCount = 0;
+  bool _showBanner = false;
 
   // Selection
   String? selectedRestaurantId;
@@ -28,6 +32,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   void initState() {
     super.initState();
     _loadRestaurants();
+    _initNotifications();
+  }
+
+  void _initNotifications() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final String? currentAdminId = FirebaseAuth.instance.currentUser?.uid;
+      if (currentAdminId != null) {
+        context.read<NotificationProvider>().fetchNotifications(currentAdminId, isAdmin: true);
+      }
+    });
   }
 
   Future<void> _loadRestaurants() async {
@@ -52,331 +66,382 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: Row(
+      body: Stack(
         children: [
-          const AdminSidebar(activeItem: 'Dashboard'),
-          Expanded(
-            child: StreamBuilder<Map<String, dynamic>>(
-              stream: _firestoreService.getDashboardStats(
-                adminId: currentAdminId,
-                restaurantId: selectedRestaurantId,
-              ),
-              builder: (context, snapshot) {
-                final stats = snapshot.data ?? {};
-                final int pendingOrders = stats[FirestoreConstants.pendingOrders] ?? 0;
+          Row(
+            children: [
+              const AdminSidebar(activeItem: 'Dashboard'),
+              Expanded(
+                child: StreamBuilder<Map<String, dynamic>>(
+                  stream: _firestoreService.getDashboardStats(
+                    adminId: currentAdminId,
+                    restaurantId: selectedRestaurantId,
+                  ),
+                  builder: (context, snapshot) {
+                    final stats = snapshot.data ?? {};
+                    final int totalOrders = stats[FirestoreConstants.totalOrders] ?? 0;
+                    final double totalRevenue = (stats[FirestoreConstants.totalRevenue] ?? 0.0).toDouble();
+                    final double totalCommission = (stats[FirestoreConstants.totalCommission] ?? 0.0).toDouble();
+                    final int totalRestaurants = stats[FirestoreConstants.totalRestaurants] ?? 0;
+                    final int totalCustomers = stats[FirestoreConstants.totalCustomers] ?? 0;
+                    final int totalRiders = stats[FirestoreConstants.totalRiders] ?? 0;
 
-                // ── NEW ORDER ALERT LOGIC ──────────────────────────────────
-                if (snapshot.hasData && pendingOrders > _lastPendingCount) {
-                  _lastPendingCount = pendingOrders;
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    _showNewOrderAlert();
-                  });
-                } else if (snapshot.hasData) {
-                  _lastPendingCount = pendingOrders;
-                }
-
-                final int totalOrders = stats[FirestoreConstants.totalOrders] ?? 0;
-                final double totalRevenue = (stats[FirestoreConstants.totalRevenue] ?? 0.0).toDouble();
-                final double totalCommission = (stats[FirestoreConstants.totalCommission] ?? 0.0).toDouble();
-                final int totalRestaurants = stats[FirestoreConstants.totalRestaurants] ?? 0;
-                final int totalCustomers = stats[FirestoreConstants.totalCustomers] ?? 0;
-                final int totalRiders = stats[FirestoreConstants.totalRiders] ?? 0;
-
-                return Column(
-                  children: [
-                    // Header
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-                      child: Row(
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                    return Column(
+                      children: [
+                        // Header
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+                          child: Row(
                             children: [
-                              const Text('Dashboard Overview',
-                                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
-                              const SizedBox(height: 4),
-                              DropdownButtonHideUnderline(
-                                child: DropdownButton<String?>(
-                                  value: selectedRestaurantId,
-                                  hint: const Text('All Restaurants', style: TextStyle(color: AppColors.subtle, fontSize: 13)),
-                                  dropdownColor: AppColors.card,
-                                  icon: const Icon(Icons.keyboard_arrow_down, color: AppColors.primary, size: 16),
-                                  style: const TextStyle(fontSize: 13, color: AppColors.primary, fontWeight: FontWeight.bold),
-                                  items: [
-                                    const DropdownMenuItem<String?>(value: null, child: Text('Global View')),
-                                    ...restaurantsList.map((r) => DropdownMenuItem<String?>(value: r['id'], child: Text(r['name']))),
-                                  ],
-                                  onChanged: (val) {
-                                    setState(() => selectedRestaurantId = val);
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-                          const Spacer(),
-                          // Pending orders badge
-                          Stack(
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.notifications_outlined, color: Colors.white),
-                                onPressed: () => Navigator.pushNamed(context, RouteNames.adminNotifications),
-                              ),
-                              if (pendingOrders > 0)
-                                Positioned(
-                                  right: 8,
-                                  top: 8,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(3),
-                                    decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
-                                    child: Text('$pendingOrders',
-                                        style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Dashboard Overview',
+                                      style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
+                                  const SizedBox(height: 4),
+                                  DropdownButtonHideUnderline(
+                                    child: DropdownButton<String?>(
+                                      value: selectedRestaurantId,
+                                      hint: const Text('All Restaurants', style: TextStyle(color: AppColors.subtle, fontSize: 13)),
+                                      dropdownColor: AppColors.card,
+                                      icon: const Icon(Icons.keyboard_arrow_down, color: AppColors.primary, size: 16),
+                                      style: const TextStyle(fontSize: 13, color: AppColors.primary, fontWeight: FontWeight.bold),
+                                      items: [
+                                        const DropdownMenuItem<String?>(value: null, child: Text('Global View')),
+                                        ...restaurantsList.map((r) => DropdownMenuItem<String?>(value: r['id'], child: Text(r['name']))),
+                                      ],
+                                      onChanged: (val) {
+                                        setState(() => selectedRestaurantId = val);
+                                      },
+                                    ),
                                   ),
-                                ),
-                            ],
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.cloud_upload_outlined, color: Colors.white),
-                            tooltip: 'Upload Pizza O Clock Menu',
-                            onPressed: () async {
-                              showDialog(
-                                context: context,
-                                barrierDismissible: false,
-                                builder: (context) => const Center(child: CircularProgressIndicator(color: AppColors.primary)),
-                              );
-                              try {
-                                String? resName;
-                                if (selectedRestaurantId != null) {
-                                  resName = restaurantsList.firstWhere(
-                                    (r) => r['id'] == selectedRestaurantId,
-                                    orElse: () => {'name': 'Selected Restaurant'},
-                                  )['name'];
-                                }
-                                
-                                await _firestoreService.addPizzaOClockMenu(
-                                  restaurantId: selectedRestaurantId,
-                                  restaurantName: resName,
-                                );
-                                
-                                if (context.mounted) {
-                                  Navigator.pop(context);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(resName != null 
-                                          ? '✅ Menu uploaded to $resName!' 
-                                          : '✅ Pizza O Clock menu initialized!'),
-                                      backgroundColor: Colors.green,
+                                ],
+                              ),
+                              const Spacer(),
+                              // Pending orders badge using NotificationProvider
+                              Consumer<NotificationProvider>(
+                                builder: (context, notificationProvider, _) {
+                                  final int unreadCount = notificationProvider.notifications
+                                      .where((n) => !n.isRead && n.type == 'new_order')
+                                      .length;
+
+                                  return Stack(
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.notifications_outlined, color: Colors.white),
+                                        onPressed: () => Navigator.pushNamed(context, RouteNames.adminNotifications),
+                                      ),
+                                      if (unreadCount > 0)
+                                        Positioned(
+                                          right: 8,
+                                          top: 8,
+                                          child: Container(
+                                            padding: const EdgeInsets.all(3),
+                                            decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+                                            child: Text('$unreadCount',
+                                                style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
+                                          ),
+                                        ),
+                                    ],
+                                  );
+                                },
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.cloud_upload_outlined, color: Colors.white),
+                                tooltip: 'Upload Menus',
+                                onPressed: () async {
+                                  final action = await showDialog<String>(
+                                    context: context,
+                                    builder: (context) => AlertDialog(
+                                      backgroundColor: AppColors.card,
+                                      title: const Text("Bulk Menu Upload", style: TextStyle(color: Colors.white)),
+                                      content: const Text("Select which menu you want to initialize/upload.", style: TextStyle(color: AppColors.subtle)),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(context, 'pizza'),
+                                          child: const Text("Pizza O' Clock"),
+                                        ),
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(context, 'cookooz'),
+                                          child: const Text("CooKoo'z Cafe"),
+                                        ),
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(context),
+                                          child: const Text("Cancel"),
+                                        ),
+                                      ],
                                     ),
                                   );
-                                }
-                              } catch (e) {
-                                if (context.mounted) {
-                                  Navigator.pop(context);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-                                  );
-                                }
-                              }
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.logout, color: Colors.white),
-                            onPressed: () async {
-                              await FirebaseAuth.instance.signOut();
-                              if (context.mounted) Navigator.pushNamedAndRemoveUntil(context, RouteNames.login, (_) => false);
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
 
-                    Expanded(
-                      child: snapshot.connectionState == ConnectionState.waiting && stats.isEmpty
-                          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
-                          : SingleChildScrollView(
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              padding: const EdgeInsets.all(24),
-                              child: Center(
-                                child: Container(
-                                  constraints: const BoxConstraints(maxWidth: 1200),
-                                  child: LayoutBuilder(
-                                    builder: (context, constraints) {
-                                      final isWide = constraints.maxWidth > 900;
-                                      final isMedium = constraints.maxWidth > 600;
+                                  if (action == null) return;
 
-                                      return Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          // ── Metric Cards ──
-                                          GridView.count(
-                                            crossAxisCount: isWide ? 4 : (isMedium ? 3 : 2),
-                                            crossAxisSpacing: 16,
-                                            mainAxisSpacing: 16,
-                                            shrinkWrap: true,
-                                            childAspectRatio: 1.4,
-                                            physics: const NeverScrollableScrollPhysics(),
-                                            children: [
-                                              _MetricCard(
-                                                  label: selectedRestaurantId == null ? 'Total Orders' : 'Store Orders',
-                                                  value: '$totalOrders',
-                                                  icon: Icons.receipt_long,
-                                                  color: AppColors.primary),
-                                              _MetricCard(
-                                                  label: 'Revenue',
-                                                  value: 'Rs ${(totalRevenue / 1000).toStringAsFixed(1)}K',
-                                                  icon: Icons.payments_outlined,
-                                                  color: AppColors.green),
-                                              _MetricCard(
-                                                  label: 'Commission',
-                                                  value: 'Rs ${(totalCommission / 1000).toStringAsFixed(1)}K',
-                                                  icon: Icons.percent,
-                                                  color: Colors.blue),
-                                              if (selectedRestaurantId == null)
-                                                _MetricCard(
-                                                    label: 'Restaurants',
-                                                    value: '$totalRestaurants',
-                                                    icon: Icons.store,
-                                                    color: AppColors.amber),
-                                              _MetricCard(
-                                                  label: 'Customers',
-                                                  value: '$totalCustomers',
-                                                  icon: Icons.people,
-                                                  color: Colors.purple),
-                                              _MetricCard(
-                                                  label: 'Riders',
-                                                  value: '$totalRiders',
-                                                  icon: Icons.delivery_dining,
-                                                  color: Colors.cyan),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 32),
+                                  if (context.mounted) {
+                                    showDialog(
+                                      context: context,
+                                      barrierDismissible: false,
+                                      builder: (context) => const Center(child: CircularProgressIndicator(color: AppColors.primary)),
+                                    );
+                                  }
 
-                                          // ── Trend Charts ──
-                                          _buildChartSection(currentAdminId, selectedRestaurantId),
-                                          const SizedBox(height: 32),
-
-                                          // ── Quick Actions ──
-                                          const Text('Quick Actions',
-                                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-                                          const SizedBox(height: 16),
-                                          GridView.count(
-                                            crossAxisCount: isWide ? 8 : (isMedium ? 6 : 4),
-                                            crossAxisSpacing: 12,
-                                            mainAxisSpacing: 12,
-                                            shrinkWrap: true,
-                                            childAspectRatio: 0.85,
-                                            physics: const NeverScrollableScrollPhysics(),
-                                            children: [
-                                              _QuickAction(
-                                                  label: 'Orders',
-                                                  icon: Icons.receipt_long,
-                                                  color: AppColors.primary,
-                                                  onTap: () => _openOrders(null)),
-                                              _QuickAction(
-                                                  label: 'Stores',
-                                                  icon: Icons.store,
-                                                  color: AppColors.amber,
-                                                  onTap: () => Navigator.pushNamed(context, RouteNames.adminStores)),
-                                              _QuickAction(
-                                                  label: 'Users',
-                                                  icon: Icons.people,
-                                                  color: Colors.blue,
-                                                  onTap: () => Navigator.pushNamed(context, RouteNames.adminCustomers)),
-                                              _QuickAction(
-                                                  label: 'Riders',
-                                                  icon: Icons.delivery_dining,
-                                                  color: Colors.cyan,
-                                                  onTap: () => Navigator.pushNamed(context, RouteNames.adminRiders)),
-                                              _QuickAction(
-                                                  label: 'Comm.',
-                                                  icon: Icons.account_balance_wallet,
-                                                  color: AppColors.green,
-                                                  onTap: () => Navigator.pushNamed(context, RouteNames.adminCommissions)),
-                                              _QuickAction(
-                                                  label: 'Stats',
-                                                  icon: Icons.bar_chart,
-                                                  color: Colors.purple,
-                                                  onTap: () => Navigator.pushNamed(context, RouteNames.adminAnalytics)),
-                                              _QuickAction(
-                                                  label: 'Notify',
-                                                  icon: Icons.notifications_active,
-                                                  color: AppColors.primary,
-                                                  onTap: () => Navigator.pushNamed(context, RouteNames.adminNotifications)),
-                                              _QuickAction(
-                                                  label: 'Reports',
-                                                  icon: Icons.assessment,
-                                                  color: Colors.orange,
-                                                  onTap: () => Navigator.pushNamed(context, RouteNames.adminPerformance)),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 32),
-
-                                          // ── Recent Orders ──
-                                          Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Text(selectedRestaurantId == null ? 'Recent Global Orders' : 'Recent Store Orders',
-                                                  style: const TextStyle(
-                                                      fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-                                              TextButton(
-                                                  onPressed: () {
-                                                    String? resName;
-                                                    if (selectedRestaurantId != null) {
-                                                      resName = restaurantsList.firstWhere(
-                                                        (r) => r['id'] == selectedRestaurantId,
-                                                        orElse: () => {'name': 'All Restaurants'},
-                                                      )['name'];
-                                                    }
-                                                    _openOrders(resName);
-                                                  },
-                                                  child: const Text('View all',
-                                                      style: TextStyle(
-                                                          color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.bold))),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 8),
-                                          _RecentOrdersList(
-                                              firestore: FirebaseFirestore.instance, restaurantId: selectedRestaurantId),
-                                        ],
+                                  try {
+                                    String? resName;
+                                    if (selectedRestaurantId != null) {
+                                      resName = restaurantsList.firstWhere(
+                                        (r) => r['id'] == selectedRestaurantId,
+                                        orElse: () => {'name': 'Selected Restaurant'},
+                                      )['name'];
+                                    }
+                                    
+                                    if (action == 'pizza') {
+                                      await _firestoreService.addPizzaOClockMenu(
+                                        restaurantId: selectedRestaurantId,
+                                        restaurantName: resName,
                                       );
-                                    },
+                                    } else if (action == 'cookooz') {
+                                      await _firestoreService.addCookoozMenu(
+                                        restaurantId: selectedRestaurantId,
+                                        restaurantName: resName,
+                                      );
+                                    }
+                                    
+                                    if (context.mounted) {
+                                      Navigator.pop(context);
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text(resName != null 
+                                              ? '✅ Menu uploaded to $resName!' 
+                                              : '✅ Menu initialized!'),
+                                          backgroundColor: Colors.green,
+                                        ),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (context.mounted) {
+                                      Navigator.pop(context);
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+                                      );
+                                    }
+                                  }
+                                },
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.logout, color: Colors.white),
+                                onPressed: () async {
+                                  await FirebaseAuth.instance.signOut();
+                                  if (context.mounted) Navigator.pushNamedAndRemoveUntil(context, RouteNames.login, (_) => false);
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        Expanded(
+                          child: snapshot.connectionState == ConnectionState.waiting && stats.isEmpty
+                              ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+                              : SingleChildScrollView(
+                                  physics: const AlwaysScrollableScrollPhysics(),
+                                  padding: const EdgeInsets.all(24),
+                                  child: Center(
+                                    child: Container(
+                                      constraints: const BoxConstraints(maxWidth: 1200),
+                                      child: LayoutBuilder(
+                                        builder: (context, constraints) {
+                                          final isWide = constraints.maxWidth > 900;
+                                          final isMedium = constraints.maxWidth > 600;
+
+                                          return Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              // ── Metric Cards ──
+                                              GridView.count(
+                                                crossAxisCount: isWide ? 4 : (isMedium ? 3 : 2),
+                                                crossAxisSpacing: 16,
+                                                mainAxisSpacing: 16,
+                                                shrinkWrap: true,
+                                                childAspectRatio: 1.4,
+                                                physics: const NeverScrollableScrollPhysics(),
+                                                children: [
+                                                  _MetricCard(
+                                                      label: selectedRestaurantId == null ? 'Total Orders' : 'Store Orders',
+                                                      value: '$totalOrders',
+                                                      icon: Icons.receipt_long,
+                                                      color: AppColors.primary),
+                                                  _MetricCard(
+                                                      label: 'Revenue',
+                                                      value: 'Rs ${(totalRevenue / 1000).toStringAsFixed(1)}K',
+                                                      icon: Icons.payments_outlined,
+                                                      color: AppColors.green),
+                                                  _MetricCard(
+                                                      label: 'Commission',
+                                                      value: 'Rs ${(totalCommission / 1000).toStringAsFixed(1)}K',
+                                                      icon: Icons.percent,
+                                                      color: Colors.blue),
+                                                  if (selectedRestaurantId == null)
+                                                    _MetricCard(
+                                                        label: 'Restaurants',
+                                                        value: '$totalRestaurants',
+                                                        icon: Icons.store,
+                                                        color: AppColors.amber),
+                                                  _MetricCard(
+                                                      label: 'Customers',
+                                                      value: '$totalCustomers',
+                                                      icon: Icons.people,
+                                                      color: Colors.purple),
+                                                  _MetricCard(
+                                                      label: 'Riders',
+                                                      value: '$totalRiders',
+                                                      icon: Icons.delivery_dining,
+                                                      color: Colors.cyan),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 32),
+
+                                              // ── Trend Charts ──
+                                              _buildChartSection(currentAdminId, selectedRestaurantId),
+                                              const SizedBox(height: 32),
+
+                                              // ── Quick Actions ──
+                                              const Text('Quick Actions',
+                                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                                              const SizedBox(height: 16),
+                                              GridView.count(
+                                                crossAxisCount: isWide ? 8 : (isMedium ? 6 : 4),
+                                                crossAxisSpacing: 12,
+                                                mainAxisSpacing: 12,
+                                                shrinkWrap: true,
+                                                childAspectRatio: 0.85,
+                                                physics: const NeverScrollableScrollPhysics(),
+                                                children: [
+                                                  _QuickAction(
+                                                      label: 'Orders',
+                                                      icon: Icons.receipt_long,
+                                                      color: AppColors.primary,
+                                                      onTap: () => _openOrders(null)),
+                                                  _QuickAction(
+                                                      label: 'Stores',
+                                                      icon: Icons.store,
+                                                      color: AppColors.amber,
+                                                      onTap: () => Navigator.pushNamed(context, RouteNames.adminStores)),
+                                                  _QuickAction(
+                                                      label: 'Users',
+                                                      icon: Icons.people,
+                                                      color: Colors.blue,
+                                                      onTap: () => Navigator.pushNamed(context, RouteNames.adminCustomers)),
+                                                  _QuickAction(
+                                                      label: 'Riders',
+                                                      icon: Icons.delivery_dining,
+                                                      color: Colors.cyan,
+                                                      onTap: () => Navigator.pushNamed(context, RouteNames.adminRiders)),
+                                                  _QuickAction(
+                                                      label: 'Comm.',
+                                                      icon: Icons.account_balance_wallet,
+                                                      color: AppColors.green,
+                                                      onTap: () => Navigator.pushNamed(context, RouteNames.adminCommissions)),
+                                                  _QuickAction(
+                                                      label: 'Stats',
+                                                      icon: Icons.bar_chart,
+                                                      color: Colors.purple,
+                                                      onTap: () => Navigator.pushNamed(context, RouteNames.adminAnalytics)),
+                                                  _QuickAction(
+                                                      label: 'Notify',
+                                                      icon: Icons.notifications_active,
+                                                      color: AppColors.primary,
+                                                      onTap: () => Navigator.pushNamed(context, RouteNames.adminNotifications)),
+                                                  _QuickAction(
+                                                      label: 'Reports',
+                                                      icon: Icons.assessment,
+                                                      color: Colors.orange,
+                                                      onTap: () => Navigator.pushNamed(context, RouteNames.adminPerformance)),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 32),
+
+                                              // ── Recent Orders ──
+                                              Row(
+                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                children: [
+                                                  Text(selectedRestaurantId == null ? 'Recent Global Orders' : 'Recent Store Orders',
+                                                      style: const TextStyle(
+                                                          fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                                                  TextButton(
+                                                      onPressed: () {
+                                                        String? resName;
+                                                        if (selectedRestaurantId != null) {
+                                                          resName = restaurantsList.firstWhere(
+                                                            (r) => r['id'] == selectedRestaurantId,
+                                                            orElse: () => {'name': 'All Restaurants'},
+                                                          )['name'];
+                                                        }
+                                                        _openOrders(resName);
+                                                      },
+                                                      child: const Text('View all',
+                                                          style: TextStyle(
+                                                              color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.bold))),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 8),
+                                              _RecentOrdersList(
+                                                  firestore: FirebaseFirestore.instance, restaurantId: selectedRestaurantId),
+                                            ],
+                                          );
+                                        },
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ),
-                    ),
-                  ],
-                );
-              },
-            ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+          
+          // ── REAL-TIME NOTIFICATION BANNER ──────────────────────────────
+          Consumer<NotificationProvider>(
+            builder: (context, notificationProvider, _) {
+              final unreadNewOrders = notificationProvider.notifications
+                  .where((n) => !n.isRead && n.type == 'new_order')
+                  .toList();
+              
+              final int newOrdersCount = unreadNewOrders.length;
+
+              // Only show banner if there are unread new orders
+              if (newOrdersCount == 0) {
+                _lastNewOrderCount = 0;
+                return const SizedBox.shrink();
+              }
+
+              // Detect if count increased to show/reshow banner
+              if (newOrdersCount > _lastNewOrderCount) {
+                _showBanner = true;
+                _lastNewOrderCount = newOrdersCount;
+              }
+
+              if (!_showBanner) return const SizedBox.shrink();
+
+              return AdminNotificationBanner(
+                newOrdersCount: newOrdersCount,
+                onTap: () {
+                  setState(() {
+                    _showBanner = false;
+                    _lastNewOrderCount = newOrdersCount;
+                  });
+                  context.read<NotificationProvider>().markAllAsRead();
+                  _openOrders(null);
+                },
+                onDismiss: () {
+                  setState(() {
+                    _showBanner = false;
+                    _lastNewOrderCount = newOrdersCount;
+                  });
+                },
+              );
+            },
           ),
         ],
-      ),
-    );
-  }
-
-  void _showNewOrderAlert() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: const [
-            Icon(Icons.warning_amber_rounded, color: Colors.white),
-            SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                '🔔 NEW ORDER RECEIVED! Please check the orders management section.',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: AppColors.primary,
-        duration: const Duration(seconds: 10),
-        behavior: SnackBarBehavior.floating,
-        action: SnackBarAction(
-          label: 'VIEW',
-          textColor: Colors.white,
-          onPressed: () => _openOrders(null),
-        ),
       ),
     );
   }

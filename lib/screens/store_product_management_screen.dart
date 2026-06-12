@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../core/constants/app_colors.dart';
 import '../core/constants/firestore_constants.dart';
 import '../services/firestore_service.dart';
 import '../services/storage_service.dart';
-import '../services/audit_service.dart';
 
 class StoreProductManagementScreen extends StatefulWidget {
   final String restaurantId;
@@ -22,14 +20,142 @@ class StoreProductManagementScreen extends StatefulWidget {
 
 class _StoreProductManagementScreenState extends State<StoreProductManagementScreen> {
   final FirestoreService _firestoreService = FirestoreService();
-  final AuditService _audit = AuditService();
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
+  final Set<String> _selectedIds = {};
+  bool _isDeleting = false;
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _toggleSelection(String id) {
+    setState(() {
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+      } else {
+        _selectedIds.add(id);
+      }
+    });
+  }
+
+  void _selectAll(List<Map<String, dynamic>> items) {
+    setState(() {
+      if (_selectedIds.length == items.length) {
+        _selectedIds.clear();
+      } else {
+        _selectedIds.clear();
+        _selectedIds.addAll(items.map((e) => e[FirestoreConstants.id] as String));
+      }
+    });
+  }
+
+  Future<void> _bulkDelete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: const Text('Bulk Delete', style: TextStyle(color: Colors.white)),
+        content: Text('Are you sure you want to delete ${_selectedIds.length} items?',
+            style: const TextStyle(color: AppColors.subtle)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      setState(() => _isDeleting = true);
+      try {
+        await _firestoreService.bulkDeleteMenuItems(widget.restaurantId, _selectedIds.toList());
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${_selectedIds.length} items deleted')),
+          );
+          setState(() {
+            _selectedIds.clear();
+            _isDeleting = false;
+          });
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          );
+          setState(() => _isDeleting = false);
+        }
+      }
+    }
+  }
+
+  void _showBulkImportDialog() {
+    final TextEditingController textController = TextEditingController();
+    bool isProcessing = false;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => AlertDialog(
+          backgroundColor: AppColors.card,
+          title: const Text('Bulk Menu Import', style: TextStyle(color: Colors.white)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Paste your menu text here.\nFormat: Name - Price - Description',
+                style: TextStyle(color: AppColors.subtle, fontSize: 12),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: textController,
+                maxLines: 10,
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: 'Chicken Tikka - 1200 - Spicy & delicious\nPepperoni - 1500...',
+                  hintStyle: const TextStyle(color: AppColors.muted),
+                  filled: true,
+                  fillColor: AppColors.background,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: isProcessing ? null : () async {
+                if (textController.text.isEmpty) return;
+                
+                setModalState(() => isProcessing = true);
+                try {
+                  await _firestoreService.bulkAddMenuItems(widget.restaurantId, textController.text);
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Menu imported successfully!'), backgroundColor: Colors.green));
+                  }
+                } catch (e) {
+                  setModalState(() => isProcessing = false);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Import error: $e'), backgroundColor: Colors.red));
+                  }
+                }
+              },
+              child: isProcessing 
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Text('Import Now'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showProductDialog([Map<String, dynamic>? item]) {
@@ -117,7 +243,7 @@ class _StoreProductManagementScreenState extends State<StoreProductManagementScr
                   value: isAvailable,
                   onChanged: (val) => setDialogState(() => isAvailable = val),
                   contentPadding: EdgeInsets.zero,
-                  activeColor: AppColors.primary,
+                  activeThumbColor: AppColors.primary,
                 ),
               ],
             ),
@@ -143,7 +269,7 @@ class _StoreProductManagementScreenState extends State<StoreProductManagementScr
 
                 try {
                   if (isEditing) {
-                    await _firestoreService.updateMenuItem(widget.restaurantId, item![FirestoreConstants.id], data);
+                    await _firestoreService.updateMenuItem(widget.restaurantId, item[FirestoreConstants.id], data);
                   } else {
                     await _firestoreService.addMenuItem(widget.restaurantId, data);
                   }
@@ -213,40 +339,75 @@ class _StoreProductManagementScreenState extends State<StoreProductManagementScr
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Product Management', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            Text(widget.restaurantName, style: const TextStyle(fontSize: 12, color: AppColors.subtle)),
-          ],
-        ),
+        title: _selectedIds.isEmpty
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Product Management', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  Text(widget.restaurantName, style: const TextStyle(fontSize: 12, color: AppColors.subtle)),
+                ],
+              )
+            : Text('${_selectedIds.length} Selected', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         backgroundColor: AppColors.card,
         elevation: 0,
+        leading: _selectedIds.isEmpty
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => setState(() => _selectedIds.clear()),
+              ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.add_circle_outline, color: AppColors.primary),
-            onPressed: () => _showProductDialog(),
-            tooltip: 'Add Product',
-          ),
+          if (_selectedIds.isNotEmpty) ...[
+            if (_isDeleting)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16.0),
+                  child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                ),
+              )
+            else
+              IconButton(
+                icon: const Icon(Icons.delete, color: Colors.red),
+                onPressed: _bulkDelete,
+                tooltip: 'Delete Selected',
+              ),
+          ] else ...[
+            IconButton(
+              icon: const Icon(Icons.library_add_outlined, color: Colors.green),
+              onPressed: () => _showBulkImportDialog(),
+              tooltip: 'Bulk Import',
+            ),
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline, color: AppColors.primary),
+              onPressed: () => _showProductDialog(),
+              tooltip: 'Add Product',
+            ),
+          ],
         ],
       ),
       body: Column(
         children: [
-          // Search Bar
+          // Search Bar & Select All
           Padding(
             padding: const EdgeInsets.all(16.0),
-            child: TextField(
-              controller: _searchController,
-              style: const TextStyle(color: Colors.white),
-              onChanged: (val) => setState(() => _searchQuery = val.toLowerCase()),
-              decoration: InputDecoration(
-                hintText: 'Search products...',
-                hintStyle: const TextStyle(color: AppColors.subtle),
-                prefixIcon: const Icon(Icons.search, color: AppColors.subtle),
-                filled: true,
-                fillColor: AppColors.card,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-              ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    style: const TextStyle(color: Colors.white),
+                    onChanged: (val) => setState(() => _searchQuery = val.toLowerCase()),
+                    decoration: InputDecoration(
+                      hintText: 'Search products...',
+                      hintStyle: const TextStyle(color: AppColors.subtle),
+                      prefixIcon: const Icon(Icons.search, color: AppColors.subtle),
+                      filled: true,
+                      fillColor: AppColors.card,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           Expanded(
@@ -273,74 +434,123 @@ class _StoreProductManagementScreenState extends State<StoreProductManagementScr
                   return const Center(child: Text('No products found.', style: TextStyle(color: AppColors.subtle)));
                 }
 
-                return ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: items.length,
-                  itemBuilder: (context, index) {
-                    final item = items[index];
-                    final name = item[FirestoreConstants.name] ?? 'Unknown';
-                    final price = (item[FirestoreConstants.price] as num?)?.toDouble() ?? 0.0;
-                    final category = item[FirestoreConstants.category] ?? 'General';
-                    final isAvailable = item['isAvailable'] ?? true;
-                    final imageUrl = item[FirestoreConstants.image];
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                      child: Row(
+                        children: [
+                          Checkbox(
+                            value: items.isNotEmpty && _selectedIds.length == items.length,
+                            onChanged: (_) => _selectAll(items),
+                            activeColor: AppColors.primary,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                          ),
+                          const Text('Select All', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                          const Spacer(),
+                          Text('${items.length} Items', style: const TextStyle(color: AppColors.subtle, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: items.length,
+                        itemBuilder: (context, index) {
+                          final item = items[index];
+                          final id = item[FirestoreConstants.id] as String;
+                          final isSelected = _selectedIds.contains(id);
+                          final name = item[FirestoreConstants.name] ?? 'Unknown';
+                          final price = (item[FirestoreConstants.price] as num?)?.toDouble() ?? 0.0;
+                          final category = item[FirestoreConstants.category] ?? 'General';
+                          final isAvailable = item['isAvailable'] ?? true;
+                          final imageUrl = item[FirestoreConstants.image];
 
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      decoration: BoxDecoration(
-                        color: AppColors.card,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.all(12),
-                        leading: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: imageUrl != null && imageUrl.toString().isNotEmpty
-                            ? Image.network(imageUrl, width: 60, height: 60, fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => _imagePlaceholder())
-                            : _imagePlaceholder(),
-                        ),
-                        title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(category, style: const TextStyle(color: AppColors.subtle, fontSize: 12)),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                Text('Rs. ${price.toStringAsFixed(0)}', 
-                                    style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
-                                const SizedBox(width: 12),
-                                Container(
-                                  width: 8, height: 8,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: isAvailable ? Colors.green : Colors.red,
-                                  ),
+                          return GestureDetector(
+                            onTap: _selectedIds.isEmpty 
+                              ? null 
+                              : () => _toggleSelection(id),
+                            onLongPress: () => _toggleSelection(id),
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              decoration: BoxDecoration(
+                                color: isSelected ? AppColors.primary.withAlpha(20) : AppColors.card,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: isSelected ? AppColors.primary : AppColors.border,
+                                  width: isSelected ? 2 : 1,
                                 ),
-                                const SizedBox(width: 4),
-                                Text(isAvailable ? 'Available' : 'Out of Stock', 
-                                    style: TextStyle(color: isAvailable ? Colors.green : Colors.red, fontSize: 11)),
-                              ],
+                              ),
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.all(12),
+                                leading: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (_selectedIds.isNotEmpty) ...[
+                                      Checkbox(
+                                        value: isSelected,
+                                        onChanged: (_) => _toggleSelection(id),
+                                        activeColor: AppColors.primary,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                      ),
+                                      const SizedBox(width: 8),
+                                    ],
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: imageUrl != null && imageUrl.toString().isNotEmpty
+                                        ? Image.network(imageUrl, width: 60, height: 60, fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) => _imagePlaceholder())
+                                        : _imagePlaceholder(),
+                                    ),
+                                  ],
+                                ),
+                                title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(category, style: const TextStyle(color: AppColors.subtle, fontSize: 12)),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        Text('Rs. ${price.toStringAsFixed(0)}', 
+                                            style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
+                                        const SizedBox(width: 12),
+                                        Container(
+                                          width: 8, height: 8,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: isAvailable ? Colors.green : Colors.red,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(isAvailable ? 'Available' : 'Out of Stock', 
+                                            style: TextStyle(color: isAvailable ? Colors.green : Colors.red, fontSize: 11)),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                                trailing: _selectedIds.isNotEmpty 
+                                  ? null 
+                                  : Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
+                                          onPressed: () => _showProductDialog(item),
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                                          onPressed: () => _confirmDeleteProduct(item),
+                                        ),
+                                      ],
+                                    ),
+                              ),
                             ),
-                          ],
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
-                              onPressed: () => _showProductDialog(item),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                              onPressed: () => _confirmDeleteProduct(item),
-                            ),
-                          ],
-                        ),
+                          );
+                        },
                       ),
-                    );
-                  },
+                    ),
+                  ],
                 );
               },
             ),

@@ -35,7 +35,9 @@ class _RestaurantMenuScreenState extends State<RestaurantMenuScreen> {
     final textColor = isDark ? AppColors.text : Colors.black87;
     final backgroundColor = isDark ? AppColors.background : AppColors.backgroundLight;
 
-    final bool isPOClock = (widget.restaurantName ?? '').toLowerCase().contains('pizza o clock');
+    final String nameLower = (widget.restaurantName ?? '').toLowerCase();
+    final bool isPOClock = nameLower.contains('pizza o clock');
+    final bool isCookooz = nameLower.contains('cookooz') || nameLower.contains('cookoo\'z');
 
     // DEBUG LOGS
     debugPrint('🏪 Opening RestaurantMenuScreen for: ${widget.restaurantName}');
@@ -404,6 +406,7 @@ class _RestaurantMenuScreenState extends State<RestaurantMenuScreen> {
                   activeCategory: _activeCategory,
                   onCategoryTap: _setActiveCategory,
                   isPOClock: isPOClock,
+                  isCookooz: isCookooz,
                 ),
               ),
 
@@ -434,12 +437,20 @@ class _RestaurantMenuScreenState extends State<RestaurantMenuScreen> {
                   }
 
                   final menuItems = snapshot.data!;
+                  final categories = menuItems.map((e) => e.category).toSet().toList();
+                  if (_activeCategory == 'Appetizer' && !categories.contains('Appetizer') && categories.isNotEmpty) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) setState(() => _activeCategory = categories.first);
+                    });
+                  }
+
+                  final filteredItems = menuItems.where((item) => item.category == _activeCategory).toList();
 
                   return SliverToBoxAdapter(
                     child: _buildMenuSection(
                       context,
-                      title: 'Menu',
-                      items: menuItems.map((item) {
+                      title: _activeCategory,
+                      items: filteredItems.map((item) {
                         return _MenuItem(
                           pizza: item.restaurantName == null 
                             ? item.copyWith(restaurantName: widget.restaurantName) 
@@ -594,6 +605,7 @@ class _CategoryTabDelegate extends SliverPersistentHeaderDelegate {
   final String activeCategory;
   final Function(String) onCategoryTap;
   final bool isPOClock;
+  final bool isCookooz;
 
   _CategoryTabDelegate({
     required this.isDark,
@@ -601,35 +613,31 @@ class _CategoryTabDelegate extends SliverPersistentHeaderDelegate {
     required this.activeCategory,
     required this.onCategoryTap,
     this.isPOClock = false,
+    this.isCookooz = false,
   });
 
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    List<String> categories;
+    if (isPOClock) {
+      categories = [
+        'Appetizer', 'P.O Clock Special', 'Deals', 'Pizzas', 'Pasta', 'Beverages', 'Sauces', 'Fun Square', 'Kidco Club'
+      ];
+    } else if (isCookooz) {
+      categories = [
+        'Pizza (Traditional)', 'Pizza (Premium)', 'Pizza (Signature)', 'Mega Deals', 'Wraps', 'Specialities', 'Fries', 'Side Orders', 'Burger', 'Burger Deals', 'Shakes & Desserts', 'Hot Bar', 'Drinks & Beverages'
+      ];
+    } else {
+      categories = ['Medium Pizzas', 'XL Pizzas', 'Family Specials', 'Sides', 'Drinks'];
+    }
+
     return Container(
       color: isDark ? AppColors.background : Colors.white,
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        children: isPOClock 
-        ? [
-          _categoryChip('Appetizer'),
-          _categoryChip('P.O Clock Special'),
-          _categoryChip('Deals'),
-          _categoryChip('Pizzas'),
-          _categoryChip('Pasta'),
-          _categoryChip('Beverages'),
-          _categoryChip('Sauces'),
-          _categoryChip('Fun Square'),
-          _categoryChip('Kidco Club'),
-        ]
-        : [
-          _categoryChip('Medium Pizzas'),
-          _categoryChip('XL Pizzas'),
-          _categoryChip('Family Specials'),
-          _categoryChip('Sides'),
-          _categoryChip('Drinks'),
-        ],
+        children: categories.map((c) => _categoryChip(c)).toList(),
       ),
     );
   }

@@ -350,6 +350,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       child: Column(
         children: [
+          _buildAccountTile(
+            Icons.notifications_none_outlined,
+            'View Notifications',
+            context,
+            onTap: () => Navigator.pushNamed(context, RouteNames.notifications),
+          ),
           _buildToggleTile(
             Icons.notifications_active,
             'Push Notifications',
@@ -507,29 +513,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Icons.description,
             'Terms of Service',
             showChevron: true,
-            onTap: () => _showContentDialog(context, 'Terms of Service', 'Standard Terms of Service for Pizza O Clock...'),
+            onTap: () => Navigator.pushNamed(context, RouteNames.termsOfService),
           ),
           _buildSupportTile(
             Icons.privacy_tip,
             'Privacy Policy',
             showChevron: true,
-            onTap: () => _showContentDialog(context, 'Privacy Policy', 'Privacy Policy content describing how we handle your data...'),
+            onTap: () => Navigator.pushNamed(context, RouteNames.privacyPolicy),
           ),
           _buildVersionTile(),
-        ],
-      ),
-    );
-  }
-
-  void _showContentDialog(BuildContext context, String title, String content) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.card,
-        title: Text(title, style: const TextStyle(color: Colors.white)),
-        content: SingleChildScrollView(child: Text(content, style: const TextStyle(color: AppColors.subtle))),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))
         ],
       ),
     );
@@ -644,7 +636,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         const SizedBox(height: 16),
         Text(
-          'Pizza O Clock © 2024',
+          'Velora Eats © 2024',
           style: TextStyle(
             fontSize: 10,
             letterSpacing: 1,

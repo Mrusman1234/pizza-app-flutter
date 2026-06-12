@@ -1,5 +1,6 @@
 class RouteNames {
   static const String splash = '/';
+  static const String onboarding = '/onboarding';
   static const String login = '/login';
   static const String signup = '/signup';
   static const String home = '/home';
@@ -9,7 +10,6 @@ class RouteNames {
   static const String pizzaDetail = '/pizza-detail';
   static const String checkout = '/checkout';
   static const String myOrders = '/my-orders';
-  static const String orderTracking = '/order-tracking';
   static const String addressManagement = '/address-management';
   static const String addAddress = '/add-address';
   static const String notifications = '/notifications';
@@ -40,6 +40,8 @@ class RouteNames {
   static const String orderSuccess = '/order-success';
   static const String chat = '/chat';
   static const String wallet = '/wallet';
+  static const String privacyPolicy = '/privacy-policy';
+  static const String termsOfService = '/terms-of-service';
 
   // ── Restaurant admin routes (child admin) ─────────────────────────────────
   static const String restaurantAdminDashboard = '/restaurant-admin-dashboard';

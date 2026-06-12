@@ -132,20 +132,11 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
                 ),
                 child: InkWell(
                   onTap: () {
-                    if (status.toLowerCase() == FirestoreConstants.statusOnTheWay.toLowerCase() || 
-                        status.toLowerCase() == 'out for delivery') {
-                      Navigator.pushNamed(
-                        context,
-                        RouteNames.orderTracking,
-                        arguments: rawId,
-                      );
-                    } else {
-                      Navigator.pushNamed(
-                        context,
-                        RouteNames.orderDetails,
-                        arguments: rawId,
-                      );
-                    }
+                    Navigator.pushNamed(
+                      context,
+                      RouteNames.orderDetails,
+                      arguments: rawId,
+                    );
                   },
                   borderRadius: BorderRadius.circular(20),
                   child: Padding(

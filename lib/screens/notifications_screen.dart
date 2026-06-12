@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import '../models/notification_model.dart';
 import '../providers/notification_provider.dart';
+import '../routes/route_names.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -62,22 +63,54 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       ),
       body: Consumer<NotificationProvider>(
         builder: (_, notifProvider, _) {
-          if (notifProvider.isLoading) {
+          if (notifProvider.isLoading && notifProvider.notifications.isEmpty) {
             return const Center(child: CircularProgressIndicator());
           }
+          
+          if (notifProvider.error != null && notifProvider.notifications.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 60, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text('Error: ${notifProvider.error}', style: const TextStyle(color: Colors.white)),
+                  ElevatedButton(
+                    onPressed: () {
+                      final uid = FirebaseAuth.instance.currentUser?.uid;
+                      if (uid != null) {
+                        notifProvider.fetchNotifications(uid);
+                      }
+                    },
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            );
+          }
+
           if (notifProvider.notifications.isEmpty) {
             return _buildEmptyState(context);
           }
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: notifProvider.notifications.length,
-            itemBuilder: (context, index) {
-              return _buildNotificationCard(
-                context,
-                notifProvider.notifications[index],
-                notifProvider,
-              );
+
+          return RefreshIndicator(
+            onRefresh: () async {
+              final uid = FirebaseAuth.instance.currentUser?.uid;
+              if (uid != null) {
+                context.read<NotificationProvider>().fetchNotifications(uid);
+              }
             },
+            child: ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: notifProvider.notifications.length,
+              itemBuilder: (context, index) {
+                return _buildNotificationCard(
+                  context,
+                  notifProvider.notifications[index],
+                  notifProvider,
+                );
+              },
+            ),
           );
         },
       ),
@@ -138,6 +171,17 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           onTap: () async {
             if (!notification.isRead) {
               await provider.markAsRead(notification.id);
+            }
+            
+            if (!context.mounted) return;
+
+            // Navigate if related to an order
+            if (notification.orderId != null && notification.orderId!.isNotEmpty) {
+              Navigator.pushNamed(
+                context,
+                RouteNames.orderDetails,
+                arguments: notification.orderId,
+              );
             }
           },
           borderRadius: BorderRadius.circular(16),

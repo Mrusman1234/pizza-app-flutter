@@ -1,5 +1,5 @@
 class AppStrings {
-  static const String appName = 'Pizza O Clock';
+  static const String appName = 'Velora Eats';
   
   // Auth
   static const String login = 'Login';

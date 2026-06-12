@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/firestore_constants.dart';
 import '../../widgets/admin_sidebar.dart';
 import '../../services/firestore_service.dart';
+import '../../providers/notification_provider.dart';
 
 class NotificationsManagerScreen extends StatelessWidget {
   const NotificationsManagerScreen({super.key});
@@ -137,11 +139,12 @@ class _NotificationsHeaderState extends State<NotificationsHeader> {
     final TextEditingController bodyController = TextEditingController();
     String target = 'All Users';
     String type = 'Push';
+    bool isBroadcasting = false;
 
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
+        builder: (context, setModalState) => AlertDialog(
           backgroundColor: AppColors.card,
           title: const Text('Create New Campaign', style: TextStyle(color: Colors.white)),
           content: SingleChildScrollView(
@@ -150,6 +153,7 @@ class _NotificationsHeaderState extends State<NotificationsHeader> {
               children: [
                 TextField(
                   controller: titleController,
+                  enabled: !isBroadcasting,
                   style: const TextStyle(color: Colors.white),
                   decoration: const InputDecoration(
                     labelText: 'Campaign Title',
@@ -158,6 +162,7 @@ class _NotificationsHeaderState extends State<NotificationsHeader> {
                 ),
                 TextField(
                   controller: bodyController,
+                  enabled: !isBroadcasting,
                   maxLines: 3,
                   style: const TextStyle(color: Colors.white),
                   decoration: const InputDecoration(
@@ -177,7 +182,7 @@ class _NotificationsHeaderState extends State<NotificationsHeader> {
                   items: ['All Users', 'Dormant Users', 'High Spenders', 'New Signups']
                       .map((s) => DropdownMenuItem(value: s, child: Text(s)))
                       .toList(),
-                  onChanged: (val) => setState(() => target = val!),
+                  onChanged: isBroadcasting ? null : (val) => setModalState(() => target = val!),
                 ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
@@ -191,24 +196,26 @@ class _NotificationsHeaderState extends State<NotificationsHeader> {
                   items: ['Push', 'Email', 'SMS', 'In-App']
                       .map((s) => DropdownMenuItem(value: s, child: Text(s)))
                       .toList(),
-                  onChanged: (val) => setState(() => type = val!),
+                  onChanged: isBroadcasting ? null : (val) => setModalState(() => type = val!),
                 ),
               ],
             ),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: isBroadcasting ? null : () => Navigator.pop(context),
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () async {
+              onPressed: isBroadcasting ? null : () async {
                 if (titleController.text.isEmpty || bodyController.text.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Please fill in all fields')),
                   );
                   return;
                 }
+
+                setModalState(() => isBroadcasting = true);
 
                 final data = {
                   FirestoreConstants.title: titleController.text,
@@ -219,9 +226,17 @@ class _NotificationsHeaderState extends State<NotificationsHeader> {
                 };
 
                 await FirestoreService().addAdminNotification(data);
-                if (context.mounted) Navigator.pop(context);
+                
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(target == 'All Users' ? '🚀 Broadcast sent to all users!' : 'Campaign sent successfully!')),
+                  );
+                }
               },
-              child: const Text('Send Campaign'),
+              child: isBroadcasting 
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Text('Send Campaign'),
             ),
           ],
         ),
@@ -402,41 +417,48 @@ class ActiveCampaignsTable extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Active Campaigns", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text("Notification History", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+              TextButton(
+                onPressed: () => context.read<NotificationProvider>().markAllAsRead(),
+                child: const Text('Mark all read', style: TextStyle(color: AppColors.primary, fontSize: 13)),
+              ),
+            ],
+          ),
           const SizedBox(height: 24),
           notifications.isEmpty 
           ? const Center(child: Padding(
               padding: EdgeInsets.all(32.0),
-              child: Text("No notifications or campaigns found.", style: TextStyle(color: AppColors.subtle)),
+              child: Text("No notifications found.", style: TextStyle(color: AppColors.subtle)),
             ))
           : SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 600),
+                constraints: const BoxConstraints(minWidth: 800),
                 child: Table(
                   columnWidths: const {
                     0: FlexColumnWidth(2),
                     1: FlexColumnWidth(1.5),
                     2: FlexColumnWidth(1),
                     3: FlexColumnWidth(1),
+                    4: FlexColumnWidth(0.5),
                   },
                   children: [
                     TableRow(
                       decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
                       children: const [
-                        Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text("Title", style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.subtle), overflow: TextOverflow.ellipsis)),
-                        Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text("Sent To", style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.subtle), overflow: TextOverflow.ellipsis)),
-                        Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text("Type", style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.subtle), overflow: TextOverflow.ellipsis)),
-                        Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text("Status", style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.subtle), overflow: TextOverflow.ellipsis)),
+                        Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text("Title", style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.subtle))),
+                        Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text("Target", style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.subtle))),
+                        Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text("Type", style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.subtle))),
+                        Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text("Status", style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.subtle))),
+                        Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text("Action", style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.subtle))),
                       ]
                     ),
                     ...notifications.map((notif) => _buildRow(
                       context, 
-                      notif[FirestoreConstants.title] ?? 'No Title', 
-                      notif[FirestoreConstants.target] ?? 'All Users', 
-                      notif[FirestoreConstants.type] ?? 'Push', 
-                      notif[FirestoreConstants.status] ?? FirestoreConstants.statusSent, 
-                      _getStatusColor(notif[FirestoreConstants.status])
+                      notif
                     )),
                   ],
                 ),
@@ -455,70 +477,75 @@ class ActiveCampaignsTable extends StatelessWidget {
     return AppColors.subtle;
   }
 
-  TableRow _buildRow(BuildContext context, String name, String sent, String rate, String status, Color color) {
+  TableRow _buildRow(BuildContext context, Map<String, dynamic> notif) {
+    final String name = notif[FirestoreConstants.title] ?? 'No Title';
+    final String sent = notif[FirestoreConstants.target] ?? 'Admin';
+    final String type = notif[FirestoreConstants.type] ?? 'Push';
+    final String status = notif[FirestoreConstants.status] ?? 'Sent';
+    final bool isRead = notif[FirestoreConstants.isRead] == true;
+    final Color color = _getStatusColor(status);
+
     return TableRow(
       decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
       children: [
-        InkWell(
-          onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Campaign details for $name...')));
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Text(name, 
-                style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white),
-                overflow: TextOverflow.ellipsis),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16), 
-          child: Text(sent, 
-              style: const TextStyle(color: AppColors.subtle),
-              overflow: TextOverflow.ellipsis),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16), 
-          child: Text(rate, 
-              style: const TextStyle(color: AppColors.subtle),
-              overflow: TextOverflow.ellipsis),
-        ),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 16),
           child: Row(
             children: [
-              UnconstrainedBox(
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-                  child: Text(status, 
-                      style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold),
-                      overflow: TextOverflow.ellipsis),
+              if (!isRead)
+                Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  width: 8, height: 8,
+                  decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
                 ),
-              ),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.delete_outline, color: AppColors.primary, size: 18),
-                onPressed: () async {
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      backgroundColor: AppColors.card,
-                      title: const Text('Delete Campaign', style: TextStyle(color: Colors.white)),
-                      content: const Text('Are you sure you want to delete this notification campaign?', style: TextStyle(color: AppColors.subtle)),
-                      actions: [
-                        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-                        TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete', style: TextStyle(color: AppColors.primary))),
-                      ],
-                    ),
-                  );
-                  if (confirm == true) {
-                    final notifId = notifications.firstWhere((n) => n[FirestoreConstants.title] == name)[FirestoreConstants.id];
-                    await FirestoreService().deleteAdminNotification(notifId);
-                  }
-                },
+              Expanded(
+                child: Text(name, 
+                    style: TextStyle(fontWeight: isRead ? FontWeight.normal : FontWeight.bold, color: Colors.white),
+                    overflow: TextOverflow.ellipsis),
               ),
             ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16), 
+          child: Text(sent, style: const TextStyle(color: AppColors.subtle)),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16), 
+          child: Text(type, style: const TextStyle(color: AppColors.subtle)),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: UnconstrainedBox(
+            alignment: Alignment.centerLeft,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+              child: Text(status, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: IconButton(
+            icon: const Icon(Icons.delete_outline, color: AppColors.primary, size: 18),
+            onPressed: () async {
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  backgroundColor: AppColors.card,
+                  title: const Text('Delete Notification', style: TextStyle(color: Colors.white)),
+                  content: const Text('Are you sure you want to delete this notification?', style: TextStyle(color: AppColors.subtle)),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                    TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete', style: TextStyle(color: AppColors.primary))),
+                  ],
+                ),
+              );
+              if (confirm == true) {
+                await FirestoreService().deleteAdminNotification(notif[FirestoreConstants.id]);
+              }
+            },
           ),
         ),
       ]

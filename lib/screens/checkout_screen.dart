@@ -125,12 +125,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         promoCode: promo?['code'],
       );
 
+      if (!context.mounted) return;
+
       // If promo used, increment redemptions
       if (promo != null && promo['id'] != null) {
         await _firestoreService.incrementPromoRedemption(promo['id']);
       }
 
-      final double totalBeforeClear = cartProvider.total;
       await cartProvider.clearCart();
 
       if (mounted) {

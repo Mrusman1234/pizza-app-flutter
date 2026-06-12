@@ -101,7 +101,7 @@ abstract class AppLocalizations {
   /// No description provided for @appName.
   ///
   /// In en, this message translates to:
-  /// **'Pizza O Clock'**
+  /// **'Velora Eats'**
   String get appName;
 
   /// No description provided for @login.

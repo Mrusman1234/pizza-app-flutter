@@ -33,7 +33,7 @@ class AdminSidebar extends StatelessWidget {
                 const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text("Pizza O Clock",
+                    Text("Velora Eats",
                         style: TextStyle(
                             fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
                     Text("Admin Panel",

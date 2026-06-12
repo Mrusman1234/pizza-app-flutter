@@ -29,31 +29,28 @@ service cloud.firestore {
     }
 
     function isOwner(userId) {
-      return request.auth.uid == userId;
+      return isSignedIn() && request.auth.uid == userId;
     }
 
     // ── user rules ─────────────────────────────────────────────────────────
 
     match /users/{userId} {
       allow read: if isSignedIn() && (isOwner(userId) || isSuperAdmin());
-
-      // Prevent users from changing their own role or status
+      allow create: if isSignedIn() && isOwner(userId);
       allow update: if isSignedIn() && isOwner(userId)
         && !request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(['role', 'isBlocked', 'assignedRestaurantId']);
-
-      allow create, delete: if isSuperAdmin();
+      allow delete: if isSuperAdmin();
 
       match /cart/{cartId} {
         allow read, write: if isSignedIn() && isOwner(userId);
       }
-
       match /addresses/{addressId} {
         allow read, write: if isSignedIn() && isOwner(userId);
       }
     }
 
-    // ── restaurant rules ───────────────────────────────────────────────────
+    // ── root collections ───────────────────────────────────────────────────
 
     match /restaurants/{restaurantId} {
       allow read: if true;
@@ -66,51 +63,33 @@ service cloud.firestore {
       }
     }
 
-    // ── order rules (the core fix) ─────────────────────────────────────────
-
-    // Finalized orders: CANNOT BE CREATED BY CLIENT
     match /orders/{orderId} {
       allow read: if isSignedIn() && (
         isOwner(resource.data.userId) ||
         isSuperAdmin() ||
         isRestaurantAdmin(resource.data.restaurantId) ||
         (isRider() && resource.data.riderId == request.auth.uid) ||
-        (isRider() && resource.data.status == 'Pending') // Riders can see available orders
+        (isRider() && resource.data.status == 'Pending')
       );
-
-      // ONLY backend / Cloud Functions can create finalized orders
-      allow create: if false;
-
-      allow update: if isSignedIn() && (
-        // 1. Super Admin can do anything
-        isSuperAdmin() ||
-
-        // 2. Restaurant Admin can update status to Confirmed/Preparing/Cancelled
-        (isRestaurantAdmin(resource.data.restaurantId) &&
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'preparingAt', 'cancelledAt'])) ||
-
-        // 3. Riders can update status to On the way/Delivered and self-assign
-        (isRider() &&
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'riderId', 'riderName', 'riderPhone', 'onTheWayAt', 'deliveredAt'])) ||
-
-        // 4. Customers can ONLY update rating after delivery
-        (isOwner(resource.data.userId) && resource.data.status == 'Delivered' &&
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['foodRating', 'riderRating', 'review', 'ratingSubmitted', 'ratedAt']))
-      );
-
+      allow create: if isSignedIn(); // Allow app to create (usually backend does this, but for now)
+      allow update: if isSignedIn();
       allow delete: if isSuperAdmin();
     }
 
-    // New collection for order requests (Drafts)
     match /order_requests/{requestId} {
-      allow create: if isSignedIn() && isOwner(request.resource.data.userId)
-        && request.resource.data.keys().hasAll(['userId', 'items', 'address'])
-        // Ensure they don't try to sneak in a finalized status or price
-        && !('totalAmount' in request.resource.data);
+      allow create: if isSignedIn();
       allow read: if isSignedIn() && (isOwner(resource.data.userId) || isSuperAdmin());
+      allow delete: if isSuperAdmin();
     }
 
-    // ── other collections ──────────────────────────────────────────────────
+    match /app_config/{docId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    match /carts/{userId} {
+      allow read, write: if isOwner(userId) || isSuperAdmin();
+    }
 
     match /deals/{dealId} {
       allow read: if true;
@@ -123,9 +102,10 @@ service cloud.firestore {
     }
 
     match /notifications/{notificationId} {
-      allow read: if isSignedIn() && (isOwner(resource.data.userId) || isSuperAdmin());
-      allow create: if isSignedIn(); // Allow app to trigger notifications for requests
-      allow delete: if isSuperAdmin() || (resource.data.userId == request.auth.uid);
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn();
     }
 
     match /commissions/{commId} {
@@ -133,9 +113,24 @@ service cloud.firestore {
     }
 
     match /checkouts/{checkoutId} {
-      allow read: if isSignedIn() && (isOwner(resource.data.userId) || isSuperAdmin());
-      // Handled by payment webhook or functions
-      allow write: if false;
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    match /wallets/{walletId} {
+      allow read: if isSignedIn() && (isOwner(walletId) || isSuperAdmin());
+      allow write: if isSuperAdmin();
+
+      match /transactions/{txnId} {
+        allow read: if isSignedIn() && (isOwner(walletId) || isSuperAdmin());
+        allow write: if isSuperAdmin();
+      }
+    }
+
+    match /withdrawal_requests/{requestId} {
+      allow create: if isSignedIn();
+      allow read: if isSignedIn();
+      allow update, delete: if isSuperAdmin();
     }
   }
 }

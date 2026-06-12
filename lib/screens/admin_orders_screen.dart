@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/firestore_constants.dart';
 import '../../widgets/admin_sidebar.dart';
 import '../../services/firestore_service.dart';
 import '../../routes/route_names.dart';
+import '../../providers/notification_provider.dart';
 
 class AdminOrdersScreen extends StatefulWidget {
   const AdminOrdersScreen({super.key});
@@ -34,6 +36,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
   void initState() {
     super.initState();
     _loadRestaurants();
+    _clearNotifications();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final args = ModalRoute.of(context)?.settings.arguments;
       if (args is String && args != 'All Restaurants') {
@@ -41,6 +44,12 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
           _selectedRestaurant = args;
         });
       }
+    });
+  }
+
+  void _clearNotifications() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<NotificationProvider>().markAllAsRead();
     });
   }
 

@@ -10,13 +10,11 @@ import '../../providers/notification_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../core/constants/app_colors.dart';
 import '../../models/pizza_model.dart';
-import '../../services/location_service.dart';
 
 import '../../widgets/common/custom_bottom_nav.dart';
 
 // Import modular widgets
 import '../../widgets/home/promotional_banner.dart';
-import '../../widgets/home/order_tracking_card.dart';
 import '../../widgets/home/hot_deals_banner.dart';
 import '../../widgets/home/popular_today_section.dart';
 import '../../widgets/home/special_deals_section.dart';
@@ -117,7 +115,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     slivers: [
                       const SliverToBoxAdapter(child: PromotionalBanner()),
                       SliverToBoxAdapter(child: _buildCategories()),
-                      const SliverToBoxAdapter(child: OrderTrackingCard()),
                       const SliverToBoxAdapter(child: VoucherBanner()),
                       
                       const SliverPadding(
@@ -232,7 +229,7 @@ class _HomeScreenState extends State<HomeScreen> {
               const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Pizza O Clock', style: TextStyle(color: AppColors.text, fontSize: 15, fontWeight: FontWeight.w500)),
+                  Text('Velora Eats', style: TextStyle(color: AppColors.text, fontSize: 15, fontWeight: FontWeight.w500)),
                   Text('VEHARI OFFICIAL', style: TextStyle(color: AppColors.primary, fontSize: 9, letterSpacing: 1.2)),
                 ],
               ),

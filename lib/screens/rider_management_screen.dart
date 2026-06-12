@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -279,19 +280,35 @@ class _RiderManagementScreenState extends State<RiderManagementScreen> {
                                               borderRadius: BorderRadius.circular(24),
                                               child: Stack(
                                                 children: [
-                                                  GoogleMap(
-                                                    initialCameraPosition: const CameraPosition(
-                                                      target: LatLng(30.0444, 72.3444),
-                                                      zoom: 12,
+                                                  if (kIsWeb)
+                                                    const Center(
+                                                      child: Column(
+                                                        mainAxisAlignment: MainAxisAlignment.center,
+                                                        children: [
+                                                          Icon(Icons.map_outlined, color: AppColors.subtle, size: 40),
+                                                          SizedBox(height: 12),
+                                                          Text("Map View (Web)", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                                          Padding(
+                                                            padding: EdgeInsets.symmetric(horizontal: 20),
+                                                            child: Text("Ensure Google Maps SDK is loaded in index.html", textAlign: TextAlign.center, style: TextStyle(color: AppColors.subtle, fontSize: 11)),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    )
+                                                  else
+                                                    GoogleMap(
+                                                      initialCameraPosition: const CameraPosition(
+                                                        target: LatLng(30.0444, 72.3444),
+                                                        zoom: 12,
+                                                      ),
+                                                      markers: _markers.values.toSet(),
+                                                      onMapCreated: (controller) {
+                                                        _mapController = controller;
+                                                        _updateMarkers(riders);
+                                                      },
+                                                      zoomControlsEnabled: false,
+                                                      myLocationButtonEnabled: false,
                                                     ),
-                                                    markers: _markers.values.toSet(),
-                                                    onMapCreated: (controller) {
-                                                      _mapController = controller;
-                                                      _updateMarkers(riders);
-                                                    },
-                                                    zoomControlsEnabled: false,
-                                                    myLocationButtonEnabled: false,
-                                                  ),
                                                   Positioned(
                                                     top: 16,
                                                     right: 16,

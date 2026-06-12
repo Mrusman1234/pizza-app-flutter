@@ -60,6 +60,7 @@ class FirestoreConstants {
 
   // Menu Fields
   static const String price = 'price';
+  static const String prices = 'prices';
   static const String quantity = 'quantity';
   static const String isAvailable = 'isAvailable';
   static const String hasSizes = 'hasSizes';
