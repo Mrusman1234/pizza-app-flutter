@@ -1,24 +1,26 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../routes/route_names.dart';
-import '../../providers/restaurant_provider.dart';
-import '../../providers/order_provider.dart';
-import '../../providers/auth_provider.dart';
-import '../../providers/deals_provider.dart';
-import '../../providers/notification_provider.dart';
-import '../../services/firestore_service.dart';
-import '../../core/constants/app_colors.dart';
-import '../../models/pizza_model.dart';
+import '../routes/route_names.dart';
+import '../providers/restaurant_provider.dart';
+import '../providers/order_provider.dart';
+import '../providers/auth_provider.dart';
+import '../providers/deals_provider.dart';
+import '../providers/notification_provider.dart';
+import '../services/firestore_service.dart';
+import '../core/constants/app_colors.dart';
+import '../models/pizza_model.dart';
 
-import '../../widgets/common/custom_bottom_nav.dart';
+import 'package:app_multi_restaurant/providers/config_provider.dart';
+
+import '../widgets/common/custom_bottom_nav.dart';
 
 // Import modular widgets
-import '../../widgets/home/promotional_banner.dart';
-import '../../widgets/home/hot_deals_banner.dart';
-import '../../widgets/home/popular_today_section.dart';
-import '../../widgets/home/special_deals_section.dart';
-import '../../widgets/home/voucher_banner.dart';
+import '../widgets/home/promotional_banner.dart';
+import '../widgets/home/hot_deals_banner.dart';
+import '../widgets/home/popular_today_section.dart';
+import '../widgets/home/special_deals_section.dart';
+import '../widgets/home/voucher_banner.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -213,6 +215,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildHeader() {
+    final config = Provider.of<ConfigProvider>(context);
+
     return Container(
       color: AppColors.background,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -226,14 +230,19 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: const Icon(Icons.local_pizza, color: Colors.white, size: 20),
               ),
               const SizedBox(width: 10),
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Velora Eats', style: TextStyle(color: AppColors.text, fontSize: 15, fontWeight: FontWeight.w500)),
-                  Text('VEHARI OFFICIAL', style: TextStyle(color: AppColors.primary, fontSize: 9, letterSpacing: 1.2)),
-                ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(config.appName, 
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: AppColors.text, fontSize: 15, fontWeight: FontWeight.bold)),
+                    const Text('OFFICIAL APP', style: TextStyle(color: AppColors.primary, fontSize: 8, letterSpacing: 1.2, fontWeight: FontWeight.bold)),
+                  ],
+                ),
               ),
-              const Spacer(),
+              const SizedBox(width: 10),
               Stack(
                 clipBehavior: Clip.none,
                 children: [

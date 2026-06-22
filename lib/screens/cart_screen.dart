@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../core/constants/app_colors.dart';
-import '../../providers/auth_provider.dart';
-import '../../providers/cart_provider.dart';
-import '../../models/cart_model.dart';
-import '../../routes/route_names.dart';
-import '../../services/firestore_service.dart';
+import '../core/constants/app_colors.dart';
+import '../providers/auth_provider.dart';
+import '../providers/cart_provider.dart';
+import '../models/cart_model.dart';
+import '../routes/route_names.dart';
+import '../services/firestore_service.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -276,7 +276,7 @@ class _CartScreenState extends State<CartScreen> {
                       ),
 
                       /// CART GROUPS (BY RESTAURANT)
-                      ...cartProvider.groups.map((group) => _buildCartGroup(group, cartProvider, userId)).toList(),
+                      ...cartProvider.groups.map((group) => _buildCartGroup(group, cartProvider, userId)),
 
                       /// PROMO
                       Container(

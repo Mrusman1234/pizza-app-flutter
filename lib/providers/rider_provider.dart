@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/rider_model.dart';
@@ -12,13 +13,17 @@ class RiderProvider with ChangeNotifier {
   bool _isTracking = false;
   RiderModel? _currentRider;
 
+  StreamSubscription? _riderSub;
+  StreamSubscription? _ridersSub;
+
   List<RiderModel> get riders => _riders;
   bool get isLoading => _isLoading;
   bool get isTracking => _isTracking;
   RiderModel? get currentRider => _currentRider;
 
   void listenToCurrentRider(String riderId) {
-    _firestoreService.getRiderById(riderId).listen((data) {
+    _riderSub?.cancel();
+    _riderSub = _firestoreService.getRiderById(riderId).listen((data) {
       if (data != null) {
         _currentRider = RiderModel.fromMap(data);
         notifyListeners();
@@ -27,10 +32,11 @@ class RiderProvider with ChangeNotifier {
   }
 
   void fetchRiders(String adminId) {
+    _ridersSub?.cancel();
     _isLoading = true;
     notifyListeners();
 
-    _firestoreService.getRiders(adminId: adminId).listen((data) {
+    _ridersSub = _firestoreService.getRiders(adminId: adminId).listen((data) {
       _riders = data.map((item) => RiderModel.fromMap(item)).toList();
       _isLoading = false;
       notifyListeners();
@@ -70,6 +76,8 @@ class RiderProvider with ChangeNotifier {
 
   @override
   void dispose() {
+    _riderSub?.cancel();
+    _ridersSub?.cancel();
     stopLocationUpdates();
     super.dispose();
   }

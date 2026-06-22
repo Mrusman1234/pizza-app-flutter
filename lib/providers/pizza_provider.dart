@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/pizza_model.dart';
 import '../services/firestore_service.dart';
@@ -7,16 +8,18 @@ class PizzaProvider with ChangeNotifier {
   List<PizzaModel> _menuItems = [];
   List<PizzaModel> _filteredItems = [];
   bool _isLoading = false;
+  StreamSubscription? _menuSub;
 
   List<PizzaModel> get menuItems => _menuItems;
   List<PizzaModel> get filteredItems => _filteredItems;
   bool get isLoading => _isLoading;
 
   void fetchMenuItems(String restaurantId) {
+    _menuSub?.cancel();
     _isLoading = true;
     notifyListeners();
 
-    _firestoreService.getMenuItems(restaurantId).listen((data) {
+    _menuSub = _firestoreService.getMenuItems(restaurantId).listen((data) {
       _menuItems = data.map((item) => PizzaModel.fromMap(item)).toList();
       _filteredItems = _menuItems;
       _isLoading = false;
@@ -25,10 +28,11 @@ class PizzaProvider with ChangeNotifier {
   }
 
   void fetchAllMenuItems() {
+    _menuSub?.cancel();
     _isLoading = true;
     notifyListeners();
 
-    _firestoreService.getAllMenuItems().listen((data) {
+    _menuSub = _firestoreService.getAllMenuItems().listen((data) {
       _menuItems = data.map((item) => PizzaModel.fromMap(item)).toList();
       _filteredItems = _menuItems;
       _isLoading = false;
@@ -57,5 +61,11 @@ class PizzaProvider with ChangeNotifier {
 
   Future<void> deleteMenuItem(String restaurantId, String itemId) async {
     await _firestoreService.deleteMenuItem(restaurantId, itemId);
+  }
+
+  @override
+  void dispose() {
+    _menuSub?.cancel();
+    super.dispose();
   }
 }

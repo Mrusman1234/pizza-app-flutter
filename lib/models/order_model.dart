@@ -5,12 +5,16 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class OrderModel {
   final String id;
   final String userId;
+  final String? userName;
   final String restaurantId;
   final String? restaurantName;
   final String? parentCheckoutId;
   final List<CartItemModel> items;
   final double totalAmount;
-  final String status; // 'pending', 'confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'
+  final double? subtotal;
+  final double? tax;
+  final double? deliveryFee;
+  final String status;
   final DateTime createdAt;
   final String deliveryAddress;
   final double? deliveryLat;
@@ -27,11 +31,15 @@ class OrderModel {
   OrderModel({
     required this.id,
     required this.userId,
+    this.userName,
     required this.restaurantId,
     this.restaurantName,
     this.parentCheckoutId,
     required this.items,
     required this.totalAmount,
+    this.subtotal,
+    this.tax,
+    this.deliveryFee,
     required this.status,
     required this.createdAt,
     required this.deliveryAddress,
@@ -51,16 +59,23 @@ class OrderModel {
     return {
       'id': id,
       'userId': userId,
+      'userName': userName,
       'restaurantId': restaurantId,
       'restaurantName': restaurantName,
       'parentCheckoutId': parentCheckoutId,
       'items': items.map((item) => item.toMap()).toList(),
       'totalAmount': totalAmount,
+      'subtotal': subtotal,
+      'tax': tax,
+      'deliveryFee': deliveryFee,
       'status': status,
       'createdAt': createdAt.toIso8601String(),
       'deliveryAddress': deliveryAddress,
+      'address': deliveryAddress,
       'deliveryLat': deliveryLat,
+      'lat': deliveryLat,
       'deliveryLng': deliveryLng,
+      'lng': deliveryLng,
       'paymentMethod': paymentMethod,
       'riderId': riderId,
       'riderName': riderName,
@@ -95,16 +110,20 @@ class OrderModel {
     return OrderModel(
       id: map['id'] ?? '',
       userId: map['userId'] ?? '',
+      userName: map['userName'],
       restaurantId: map['restaurantId'] ?? '',
       restaurantName: map['restaurantName'],
       parentCheckoutId: map['parentCheckoutId'],
       items: (map['items'] as List?)?.map((item) => CartItemModel.fromMap(item)).toList() ?? [],
       totalAmount: (map['totalAmount'] as num?)?.toDouble() ?? 0.0,
+      subtotal: (map['subtotal'] as num?)?.toDouble(),
+      tax: (map['tax'] as num?)?.toDouble(),
+      deliveryFee: (map['deliveryFee'] as num?)?.toDouble(),
       status: map['status'] ?? FirestoreConstants.statusPending,
       createdAt: parseDateTime(map['createdAt']),
-      deliveryAddress: map['deliveryAddress'] ?? '',
-      deliveryLat: (map['deliveryLat'] as num?)?.toDouble(),
-      deliveryLng: (map['deliveryLng'] as num?)?.toDouble(),
+      deliveryAddress: map['deliveryAddress'] ?? map['address'] ?? '',
+      deliveryLat: (map['deliveryLat'] as num? ?? map['lat'] as num?)?.toDouble(),
+      deliveryLng: (map['deliveryLng'] as num? ?? map['lng'] as num?)?.toDouble(),
       paymentMethod: map['paymentMethod'] ?? 'COD',
       riderId: map['riderId'],
       riderName: map['riderName'],

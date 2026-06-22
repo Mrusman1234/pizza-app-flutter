@@ -3,12 +3,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import '../../core/constants/app_colors.dart';
-import '../../core/constants/firestore_constants.dart';
-import '../../widgets/admin_sidebar.dart';
-import '../../services/firestore_service.dart';
-import '../../routes/route_names.dart';
-import '../../providers/notification_provider.dart';
+import '../core/constants/app_colors.dart';
+import '../core/constants/firestore_constants.dart';
+import '../widgets/admin_sidebar.dart';
+import '../services/firestore_service.dart';
+import '../routes/route_names.dart';
+import '../providers/notification_provider.dart';
 
 class AdminOrdersScreen extends StatefulWidget {
   const AdminOrdersScreen({super.key});

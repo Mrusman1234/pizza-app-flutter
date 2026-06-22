@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/wallet_model.dart';
 import '../services/firestore_service.dart';
@@ -9,6 +10,9 @@ class WalletProvider with ChangeNotifier {
   List<WalletTransactionModel> _transactions = [];
   bool _isLoading = false;
 
+  StreamSubscription? _walletSub;
+  StreamSubscription? _txnSub;
+
   WalletModel? get wallet => _wallet;
   List<WalletTransactionModel> get transactions => _transactions;
   bool get isLoading => _isLoading;
@@ -17,7 +21,8 @@ class WalletProvider with ChangeNotifier {
     if (id.isEmpty) return;
     _isLoading = true;
     
-    _firestoreService.getWallet(id).listen((data) {
+    _walletSub?.cancel();
+    _walletSub = _firestoreService.getWallet(id).listen((data) {
       if (data != null) {
         _wallet = WalletModel.fromMap(id, data);
         notifyListeners();
@@ -25,7 +30,8 @@ class WalletProvider with ChangeNotifier {
       _isLoading = false;
     });
 
-    _firestoreService.getWalletTransactions(id).listen((data) {
+    _txnSub?.cancel();
+    _txnSub = _firestoreService.getWalletTransactions(id).listen((data) {
       _transactions = data.map((t) => WalletTransactionModel.fromMap(t['id'], t)).toList();
       notifyListeners();
     });
@@ -42,5 +48,12 @@ class WalletProvider with ChangeNotifier {
     } catch (e) {
       rethrow;
     }
+  }
+
+  @override
+  void dispose() {
+    _walletSub?.cancel();
+    _txnSub?.cancel();
+    super.dispose();
   }
 }

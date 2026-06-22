@@ -11,9 +11,16 @@ class RestaurantAdminModel {
   final DateTime? createdAt;
   final String? profilePic;
   final String? phoneNumber;
-  final List<String> permissions; // ['orders', 'menu', 'stats']
+  final List<String> permissions; // ['orders', 'menu', 'stats', 'notifications', 'analytics', 'commissions']
 
-  static const List<String> defaultPermissions = ['orders', 'menu', 'stats'];
+  static const List<String> defaultPermissions = [
+    'orders',
+    'menu',
+    'stats',
+    'notifications',
+    'analytics',
+    'commissions'
+  ];
 
   RestaurantAdminModel({
     required this.uid,
@@ -32,6 +39,9 @@ class RestaurantAdminModel {
   bool get canManageOrders => permissions.contains('orders');
   bool get canManageMenu => permissions.contains('menu');
   bool get canViewStats => permissions.contains('stats');
+  bool get canManageNotifications => permissions.contains('notifications');
+  bool get canViewAnalytics => permissions.contains('analytics');
+  bool get canManageCommissions => permissions.contains('commissions');
 
   Map<String, dynamic> toMap() {
     return {

@@ -62,18 +62,21 @@ class CartGroup {
   final String restaurantId;
   final String restaurantName;
   final List<CartItemModel> items;
+  final double baseDeliveryFee;
+  final double taxRate;
 
   CartGroup({
     required this.restaurantId,
     required this.restaurantName,
     required this.items,
+    this.baseDeliveryFee = 50.0,
+    this.taxRate = 0.05,
   });
 
   double get subtotal => items.fold(0.0, (acc, item) => acc + (item.itemPrice * item.quantity));
   
-  // Logic for per-restaurant fees if needed (e.g., individual delivery fees)
-  double get deliveryFee => 50.0; 
-  double get tax => subtotal * 0.05; // 5% GST example
+  double get deliveryFee => baseDeliveryFee; 
+  double get tax => subtotal * taxRate;
 
   double get total => subtotal + deliveryFee + tax;
 }

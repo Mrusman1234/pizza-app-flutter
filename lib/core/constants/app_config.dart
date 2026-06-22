@@ -47,9 +47,10 @@ class AppConfig {
     return const String.fromEnvironment('RECAPTCHA_SITE_KEY', defaultValue: '');
   }
 
-  static const String supportWhatsAppNumber = '+923000000000';
-  static const String supportPhoneNumber = '+923000000000';
-  static const String supportEmail = 'support@pizzahub.com';
+  // Note: Support Contact Info (WhatsApp, Phone, Email) and Financial Constants 
+  // (Fees, Tax) have been moved to Firestore 'app_config' collection for 
+  // dynamic management without app updates. 
+  // Use ConfigProvider to access these values.
 
   static const String appVersion = '2.4.0';
   static const String appBuildNumber = '240';

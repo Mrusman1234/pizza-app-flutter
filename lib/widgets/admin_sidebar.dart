@@ -2,12 +2,17 @@ import 'package:flutter/material.dart';
 import '../core/constants/app_colors.dart';
 import '../routes/route_names.dart';
 
+import '../providers/config_provider.dart';
+import 'package:provider/provider.dart';
+
 class AdminSidebar extends StatelessWidget {
   final String activeItem;
   const AdminSidebar({super.key, required this.activeItem});
 
   @override
   Widget build(BuildContext context) {
+    final configProvider = Provider.of<ConfigProvider>(context);
+
     return Container(
       width: 260,
       decoration: const BoxDecoration(
@@ -30,18 +35,22 @@ class AdminSidebar extends StatelessWidget {
                   child: const Icon(Icons.local_pizza, color: Colors.white, size: 22),
                 ),
                 const SizedBox(width: 12),
-                const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text("Velora Eats",
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
-                    Text("Admin Panel",
-                        style: TextStyle(
-                            color: AppColors.primary,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w500)),
-                  ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(configProvider.appName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
+                      const Text("Admin Panel",
+                          style: TextStyle(
+                              color: AppColors.primary,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500)),
+                    ],
+                  ),
                 ),
               ],
             ),

@@ -37,6 +37,23 @@ class _RestaurantAdminMenuScreenState extends State<RestaurantAdminMenuScreen> {
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: provider.menuStream(),
         builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.wifi_off_rounded, size: 48, color: Colors.redAccent),
+                    const SizedBox(height: 16),
+                    const Text('Unable to load menu', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Text(snapshot.error.toString(), textAlign: TextAlign.center, style: const TextStyle(color: AppColors.subtle, fontSize: 12)),
+                  ],
+                ),
+              ),
+            );
+          }
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator(color: AppColors.primary));
           }

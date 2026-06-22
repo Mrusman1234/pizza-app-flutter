@@ -1,14 +1,22 @@
+import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../../core/constants/app_colors.dart';
-import '../../providers/cart_provider.dart';
-import '../../providers/auth_provider.dart';
-import '../../providers/restaurant_provider.dart';
-import '../../services/firestore_service.dart';
-import '../../core/utils/location_helper.dart';
-import '../../widgets/custom_button.dart';
-import '../../routes/route_names.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../core/constants/app_colors.dart';
+import '../providers/cart_provider.dart';
+import '../providers/auth_provider.dart';
+import '../providers/restaurant_provider.dart';
+import '../services/firestore_service.dart';
+import '../services/payment_service.dart';
+import '../core/utils/location_helper.dart';
+import '../widgets/custom_button.dart';
+import '../routes/route_names.dart';
+import 'package:app_multi_restaurant/providers/config_provider.dart';
+import '../screens/payment_webview_screen.dart';
 
 class CheckoutScreen extends StatefulWidget {
   const CheckoutScreen({super.key});
@@ -19,14 +27,22 @@ class CheckoutScreen extends StatefulWidget {
 
 class _CheckoutScreenState extends State<CheckoutScreen> {
   final FirestoreService _firestoreService = FirestoreService();
+  final PaymentService _paymentService = PaymentService();
   bool _isPlacingOrder = false;
   Map<String, dynamic>? _selectedAddress;
   String _paymentMethod = 'Cash on Delivery';
+  StreamSubscription? _paymentSub;
 
   @override
   void initState() {
     super.initState();
     _loadDefaultAddress();
+  }
+
+  @override
+  void dispose() {
+    _paymentSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadDefaultAddress() async {
@@ -43,58 +59,22 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Future<void> _placeOrder() async {
     final cartProvider = Provider.of<CartProvider>(context, listen: false);
     final restaurantProvider = Provider.of<RestaurantProvider>(context, listen: false);
-    
-    // Check busy status and geofencing for all unique restaurants in the cart
-    final groups = cartProvider.groups;
-    final userLat = (_selectedAddress?['lat'] as num?)?.toDouble();
-    final userLng = (_selectedAddress?['lng'] as num?)?.toDouble();
+    final configProvider = Provider.of<ConfigProvider>(context, listen: false);
+    final auth = Provider.of<AppAuthProvider>(context, listen: false);
 
-    for (var group in groups) {
-      final restaurant = await restaurantProvider.getRestaurantById(group.restaurantId);
-      
-      if (restaurant == null) continue;
+    // ── CONFIG & VALIDATION CHECKS ──────────────────────────────────────
+    if (!configProvider.ordersEnabled) {
+      _showError('Ordering is currently disabled.');
+      return;
+    }
 
-      if (restaurant.isBusy) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${group.restaurantName} is currently busy and cannot accept orders.'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-
-      // ── GEOFENCING CHECK ────────────────────────────────────────────────
-      if (userLat != null && userLng != null && 
-          restaurant.latitude != null && restaurant.longitude != null) {
-        
-        final bool isWithinRange = LocationHelper.isWithinRadius(
-          userLat: userLat,
-          userLng: userLng,
-          restaurantLat: restaurant.latitude!,
-          restaurantLng: restaurant.longitude!,
-          radiusInKm: restaurant.deliveryRadius,
-        );
-
-        if (!isWithinRange) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Delivery address is outside ${group.restaurantName}\'s delivery zone.'),
-              backgroundColor: Colors.redAccent,
-            ),
-          );
-          return;
-        }
-      }
+    if (cartProvider.subtotal < configProvider.minOrderAmount) {
+      _showError('Minimum order amount is Rs. ${configProvider.minOrderAmount.toStringAsFixed(0)}');
+      return;
     }
 
     if (_selectedAddress == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a delivery address')),
-      );
+      _showError('Please select a delivery address');
       return;
     }
 
@@ -103,16 +83,41 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     if (cartProvider.items.isEmpty) return;
 
+    final userLat = (_selectedAddress?['lat'] as num?)?.toDouble();
+    final userLng = (_selectedAddress?['lng'] as num?)?.toDouble();
+
+    // Check restaurants status and distance
+    final groups = cartProvider.groups;
+    for (var group in groups) {
+      final restaurant = await restaurantProvider.getRestaurantById(group.restaurantId);
+      if (restaurant == null) continue;
+      if (restaurant.isBusy) {
+        _showError('${group.restaurantName} is busy.');
+        return;
+      }
+      if (userLat != null && userLng != null && restaurant.latitude != null) {
+        final inRange = LocationHelper.isWithinRadius(
+          userLat: userLat, userLng: userLng,
+          restaurantLat: restaurant.latitude!, restaurantLng: restaurant.longitude!,
+          radiusInKm: restaurant.deliveryRadius,
+        );
+        if (!inRange) {
+          _showError('Outside ${group.restaurantName} delivery zone.');
+          return;
+        }
+      }
+    }
+
     setState(() => _isPlacingOrder = true);
 
     try {
-      final groups = cartProvider.groups;
-      final promo = cartProvider.appliedPromo;
-      
-      final auth = Provider.of<AppAuthProvider>(context, listen: false);
       final userName = auth.user?.name ?? 'Customer';
-      final userPhone = auth.user?.phoneNumber ?? '03000000000'; // Fallback if missing
+      final userPhone = auth.user?.phoneNumber ?? '03000000000';
+      final checkoutId = FirebaseFirestore.instance.collection('checkouts').doc().id;
 
+      // ── Step 1: Create Order Requests ──
+      // For Online payments, they stay as 'PendingPayment'
+      // For COD, they become 'Draft' and are processed by Cloud Function immediately
       await _firestoreService.placeOrders(
         userId: user.uid,
         userName: userName,
@@ -122,44 +127,130 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         lat: _selectedAddress!['lat'],
         lng: _selectedAddress!['lng'],
         paymentMethod: _paymentMethod,
-        promoCode: promo?['code'],
+        baseDeliveryFee: configProvider.baseDeliveryFee,
+        taxRate: configProvider.taxRate,
+        discountAmount: cartProvider.discountAmount,
+        promoCode: cartProvider.appliedPromo?['code'],
+        checkoutId: checkoutId,
       );
 
-      if (!context.mounted) return;
+      // ── Step 2: Handle Online Payment ──
+      if (_paymentMethod == 'Credit/Debit Card') {
+        final paid = await _paymentService.startStripePayment(
+          amount: cartProvider.total,
+          checkoutId: checkoutId,
+          email: user.email ?? '',
+        );
+        if (!paid) {
+          setState(() => _isPlacingOrder = false);
+          return;
+        }
+      } else if (_paymentMethod == 'JazzCash / EasyPaisa') {
+        final html = await _paymentService.initiateJazzCash(
+          amount: cartProvider.total,
+          checkoutId: checkoutId,
+        );
+        
+        if (!mounted) return;
 
-      // If promo used, increment redemptions
-      if (promo != null && promo['id'] != null) {
-        await _firestoreService.incrementPromoRedemption(promo['id']);
+        if (kIsWeb) {
+          // On Web, open in new tab to avoid WebView crash and handle redirects better
+          final url = Uri.dataFromString(
+            html,
+            mimeType: 'text/html',
+            encoding: utf8,
+          ).toString();
+          
+          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+          
+          // Listen for status in Firestore since we can't 'await' the new tab
+          _listenForPaymentStatus(checkoutId);
+          return;
+        }
+
+        final status = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PaymentWebViewScreen(
+              htmlContent: html,
+              successUrl: 'order-success',
+              failureUrl: 'payment-failed',
+              title: 'JazzCash Payment',
+            ),
+          ),
+        );
+
+        if (status != 'success') {
+          if (mounted) {
+            setState(() => _isPlacingOrder = false);
+            _showError('Payment cancelled or failed.');
+          }
+          return;
+        }
+      }
+
+      // ── Step 3: Cleanup and Success ──
+      if (cartProvider.appliedPromo != null) {
+        await _firestoreService.incrementPromoRedemption(cartProvider.appliedPromo!['id']);
       }
 
       await cartProvider.clearCart();
 
       if (mounted) {
-        if (_paymentMethod == 'JazzCash / EasyPaisa') {
-          // Note: In a multi-order scenario, payment logic would ideally target a transaction/checkout ID
-          // For now, we redirect to success or home
-          Navigator.pushNamedAndRemoveUntil(
-            context,
-            RouteNames.orderSuccess,
-            (route) => false,
-            arguments: "MULTI_ORDER_CHECKOUT",
-          );
-        } else {
-          Navigator.pushNamedAndRemoveUntil(
-            context,
-            RouteNames.myOrders,
-            (route) => false,
-          );
-        }
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          RouteNames.orderSuccess,
+          (route) => false,
+          arguments: checkoutId,
+        );
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isPlacingOrder = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        _showError('Order Error: $e');
       }
     }
+  }
+
+  void _listenForPaymentStatus(String checkoutId) {
+    _paymentSub?.cancel();
+    _paymentSub = FirebaseFirestore.instance
+        .collection('checkouts')
+        .doc(checkoutId)
+        .snapshots()
+        .listen((snapshot) async {
+      if (!mounted) return;
+      if (snapshot.exists) {
+        final status = snapshot.data()?['status'];
+        if (status == 'paid') {
+          final cartProvider = Provider.of<CartProvider>(context, listen: false);
+          
+          if (cartProvider.appliedPromo != null) {
+            await _firestoreService.incrementPromoRedemption(cartProvider.appliedPromo!['id']);
+          }
+
+          await cartProvider.clearCart();
+
+          if (mounted) {
+            Navigator.pushNamedAndRemoveUntil(
+              context,
+              RouteNames.orderSuccess,
+              (route) => false,
+              arguments: snapshot.data()?['txnRef'] ?? checkoutId,
+            );
+          }
+        } else if (status == 'failed') {
+          setState(() => _isPlacingOrder = false);
+          _showError('Payment Failed: ${snapshot.data()?['error'] ?? "Transaction declined"}');
+        }
+      }
+    });
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
+    );
   }
 
   @override

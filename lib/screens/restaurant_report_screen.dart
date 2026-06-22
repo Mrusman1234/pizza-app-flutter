@@ -4,9 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-import '../../core/constants/app_colors.dart';
-import '../../core/constants/firestore_constants.dart';
-import '../../widgets/admin_sidebar.dart';
+import '../core/constants/app_colors.dart';
+import '../core/constants/firestore_constants.dart';
+import '../widgets/admin_sidebar.dart';
 
 class RestaurantReportScreen extends StatefulWidget {
   const RestaurantReportScreen({super.key});

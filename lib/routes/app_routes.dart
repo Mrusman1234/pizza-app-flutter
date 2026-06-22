@@ -51,6 +51,7 @@ import '../screens/store_product_management_screen.dart';
 import '../screens/wallet_screen.dart';
 import '../screens/privacy_policy_screen.dart';
 import '../screens/terms_of_service_screen.dart';
+import '../screens/accept_invitation_screen.dart';
 import '../models/restaurant_model.dart';
 import 'route_names.dart';
 
@@ -178,6 +179,11 @@ class AppRoutes {
     RouteNames.wallet: (context) => const WalletScreen(),
     RouteNames.privacyPolicy: (context) => const PrivacyPolicyScreen(),
     RouteNames.termsOfService: (context) => const TermsOfServiceScreen(),
+    RouteNames.acceptInvitation: (context) {
+      final args = ModalRoute.of(context)!.settings.arguments;
+      final token = args is String ? args : (args as Map<String, dynamic>?)?['token'] as String?;
+      return AcceptInvitationScreen(token: token);
+    },
   };
 }
 

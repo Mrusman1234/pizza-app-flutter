@@ -4,12 +4,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
-import '../../providers/auth_provider.dart';
-import '../../routes/route_names.dart';
-import '../../core/constants/app_strings.dart';
+import '../providers/auth_provider.dart';
+import '../routes/route_names.dart';
+import '../core/constants/app_strings.dart';
 import 'package:provider/provider.dart';
 
-import '../../services/firestore_service.dart';
+import '../services/firestore_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});

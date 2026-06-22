@@ -86,6 +86,18 @@ class NotificationService {
     }
   }
 
+  /// Explicitly trigger a token update (e.g. after login)
+  Future<void> updateToken() async {
+    try {
+      String? token = await _fcm.getToken();
+      if (token != null) {
+        await saveTokenToFirestore(token);
+      }
+    } catch (e) {
+      if (kDebugMode) print('Error fetching FCM token: $e');
+    }
+  }
+
   void _handleForegroundMessage(RemoteMessage message) {
     final notification = message.notification;
     final android = message.notification?.android;

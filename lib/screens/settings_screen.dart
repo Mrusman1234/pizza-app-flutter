@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'help_center_screen.dart';
 import 'package:provider/provider.dart';
-import '../../widgets/common/custom_bottom_nav.dart';
-import '../../providers/auth_provider.dart';
-import '../../models/user_model.dart';
-import '../../services/firestore_service.dart';
-import '../../routes/route_names.dart';
-import '../../core/constants/app_colors.dart';
+import '../widgets/common/custom_bottom_nav.dart';
+import '../providers/auth_provider.dart';
+import '../providers/config_provider.dart';
+import '../models/user_model.dart';
+import '../services/firestore_service.dart';
+import '../routes/route_names.dart';
+import '../core/constants/app_colors.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -166,7 +167,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       // Danger action
                       _buildDangerAction(context),
 
-                      const SizedBox(height: 120), // space for bottom nav
+                      const SizedBox(height: 120), // space for bottom navigation
                     ]),
                   ),
                 ),
@@ -562,6 +563,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildVersionTile() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primary = AppColors.primary;
+    final configProvider = Provider.of<ConfigProvider>(context);
+    final version = configProvider.config?.latestVersion ?? '1.0.0';
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
       child: Row(
@@ -585,7 +589,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               borderRadius: BorderRadius.circular(6),
             ),
             child: Text(
-              'v2.4.0-stable',
+              'v$version',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
@@ -636,7 +640,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         const SizedBox(height: 16),
         Text(
-          'Velora Eats © 2024',
+          '${Provider.of<ConfigProvider>(context, listen: false).appName} © 2024',
           style: TextStyle(
             fontSize: 10,
             letterSpacing: 1,
@@ -692,10 +696,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               final success = await authProvider.deleteAccount(context);
               if (success && context.mounted) {
                 Navigator.pushNamedAndRemoveUntil(context, RouteNames.login, (route) => false);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Account deleted successfully')));
-              } else if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to delete account. Please re-login and try again.')));
-                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Account deleted successfully'), backgroundColor: Colors.green),
+                );
               }
             },
             child: const Text("Delete", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),

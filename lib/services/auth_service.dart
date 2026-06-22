@@ -3,6 +3,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'notification_service.dart';
+import 'firestore_service.dart';
 
 class AuthService extends ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -63,10 +64,13 @@ class AuthService extends ChangeNotifier {
   Future<bool> login(String email, String password) async {
     try {
       await _auth.signInWithEmailAndPassword(email: email, password: password);
-      // Update FCM token after login
+      // Update fcmToken after login
       await NotificationService().init();
       notifyListeners();
       return true;
+    } on FirebaseAuthException catch (e) {
+      debugPrint("🔥 FirebaseAuth Error [${e.code}]: ${e.message}");
+      return false;
     } catch (e) {
       debugPrint("Login Error: $e");
       return false;
@@ -98,7 +102,7 @@ class AuthService extends ChangeNotifier {
           'points': 0,
         });
 
-        // Initialize notifications after signup
+        // Initialize notifications after sign up
         await NotificationService().init();
       }
 
@@ -113,21 +117,24 @@ class AuthService extends ChangeNotifier {
   // ── Google Sign-In ────────────────────────────────────────────────────────
   Future<bool> signInWithGoogle() async {
     try {
-      final GoogleSignIn googleSignIn = GoogleSignIn(
-        clientId: kIsWeb ? '817904341442-uaejh9qt5q8avms0h39kev7j4dguf9s4.apps.googleusercontent.com' : null,
-      );
-      final account = await googleSignIn.signIn();
+      if (kIsWeb) {
+        // Web uses pop-up to avoid hangs and manual client ID config
+        final GoogleAuthProvider authProvider = GoogleAuthProvider();
+        await _auth.signInWithPopup(authProvider);
+      } else {
+        // Mobile uses standard flow
+        await GoogleSignIn.instance.initialize();
+        final account = await GoogleSignIn.instance.authenticate();
 
-      if (account == null) return false;
+        final auth = account.authentication;
 
-      final auth = await account.authentication;
+        final credential = GoogleAuthProvider.credential(
+          idToken: auth.idToken,
+        );
 
-      final credential = GoogleAuthProvider.credential(
-        idToken: auth.idToken,
-        accessToken: auth.accessToken,
-      );
+        await _auth.signInWithCredential(credential);
+      }
 
-      await _auth.signInWithCredential(credential);
       // Initialize notifications after Google Sign-In
       await NotificationService().init();
       notifyListeners();
@@ -169,7 +176,9 @@ class AuthService extends ChangeNotifier {
   // Logout
   Future<void> logout() async {
     await _auth.signOut();
-    await GoogleSignIn().signOut();
+    if (!kIsWeb) {
+      await GoogleSignIn.instance.signOut();
+    }
     notifyListeners();
   }
 
@@ -194,17 +203,31 @@ class AuthService extends ChangeNotifier {
     try {
       final user = _auth.currentUser;
       if (user != null) {
-        // Delete from Firestore first
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).delete();
-        // Delete from Firebase Auth
-        await user.delete();
+        final uid = user.uid;
+        
+        // 1. Clean up Firestore data first (Checks for active orders)
+        await FirestoreService().deleteUserData(uid);
+        
+        // 2. Delete from Firebase Auth
+        try {
+          await user.delete();
+        } on FirebaseAuthException catch (e) {
+          if (e.code == 'requires-recent-login') {
+            throw Exception("Sensitive operation. Please log in again before deleting your account.");
+          }
+          rethrow;
+        }
+        
+        if (!kIsWeb) {
+          await GoogleSignIn.instance.signOut();
+        }
         notifyListeners();
         return true;
       }
       return false;
     } catch (e) {
       debugPrint("Delete Account Error: $e");
-      return false;
+      rethrow; // Rethrow to allow UI to show specific error message
     }
   }
 }

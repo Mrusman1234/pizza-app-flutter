@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../../core/constants/app_colors.dart';
-import '../../core/constants/firestore_constants.dart';
-import '../../widgets/admin_sidebar.dart';
-import '../../routes/route_names.dart';
+import '../core/constants/app_colors.dart';
+import '../core/constants/firestore_constants.dart';
+import '../widgets/admin_sidebar.dart';
+import '../routes/route_names.dart';
 
 class CustomerManagementScreen extends StatefulWidget {
   const CustomerManagementScreen({super.key});

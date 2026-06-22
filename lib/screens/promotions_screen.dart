@@ -1,9 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import '../../core/constants/app_colors.dart';
-import '../../core/constants/firestore_constants.dart';
-import '../../widgets/admin_sidebar.dart';
-import '../../services/firestore_service.dart';
+import '../core/constants/app_colors.dart';
+import '../core/constants/firestore_constants.dart';
+import '../widgets/admin_sidebar.dart';
+import '../services/firestore_service.dart';
 
 class PromotionsManagementScreen extends StatefulWidget {
   const PromotionsManagementScreen({super.key});

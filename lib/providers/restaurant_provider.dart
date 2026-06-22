@@ -8,7 +8,7 @@ import '../core/utils/location_helper.dart';
 class RestaurantProvider with ChangeNotifier {
   final FirestoreService _firestoreService = FirestoreService();
   List<RestaurantModel> _restaurants = [];
-  Map<String, double> _distances = {};
+  final Map<String, double> _distances = {};
   bool _isLoading = false;
   StreamSubscription? _restaurantsSubscription;
 

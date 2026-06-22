@@ -8,6 +8,7 @@ import '../providers/restaurant_admin_provider.dart';
 import '../routes/route_names.dart';
 import '../models/restaurant_admin_model.dart';
 import '../core/constants/firestore_constants.dart';
+import 'package:app_multi_restaurant/providers/config_provider.dart';
 
 class RestaurantAdminDashboardScreen extends StatefulWidget {
   const RestaurantAdminDashboardScreen({super.key});
@@ -133,6 +134,8 @@ class _RestaurantAdminDashboardScreenState
   }
 
   Widget _buildHeader(String adminName, String restaurantName) {
+    final configProvider = Provider.of<ConfigProvider>(context);
+
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
       decoration: const BoxDecoration(
@@ -166,8 +169,8 @@ class _RestaurantAdminDashboardScreenState
                       ),
                     ),
                     Text(
-                      'Welcome, $adminName',
-                      style: const TextStyle(color: AppColors.subtle, fontSize: 12),
+                      '${configProvider.appName} Admin: $adminName',
+                      style: const TextStyle(color: AppColors.subtle, fontSize: 11),
                     ),
                   ],
                 ),
@@ -204,8 +207,10 @@ class _RestaurantAdminDashboardScreenState
     final provider = context.watch<RestaurantAdminProvider>();
     final restId = provider.restaurantId;
 
+    if (restId.isEmpty) return const SizedBox.shrink();
+
     return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance.collection(FirestoreConstants.restaurants).doc(restId).snapshots(),
+      stream: provider.restaurantStream(restId),
       builder: (context, snapshot) {
         final data = snapshot.data?.data() as Map<String, dynamic>?;
         final bool isBusy = data?['isBusy'] ?? false;
@@ -485,7 +490,7 @@ class _RestaurantAdminDashboardScreenState
                 ],
               ),
             );
-          }).toList(),
+          }),
         ],
       ),
     );
@@ -574,6 +579,9 @@ class _RestaurantAdminDashboardScreenState
         StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: provider.ordersStream(),
           builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return _buildErrorState('Error loading orders: ${snapshot.error}');
+            }
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(
                   child: Padding(
@@ -605,6 +613,27 @@ class _RestaurantAdminDashboardScreenState
           },
         ),
       ],
+    );
+  }
+
+  Widget _buildErrorState(String message) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.only(top: 10),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3), width: 0.5),
+      ),
+      child: Column(
+        children: [
+          const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 32),
+          const SizedBox(height: 12),
+          Text(message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.subtle, fontSize: 12)),
+        ],
+      ),
     );
   }
 

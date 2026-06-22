@@ -2,93 +2,150 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── helper functions ───────────────────────────────────────────────────
+    // ── HELPER FUNCTIONS ───────────────────────────────────────────────────
 
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    function getRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
     }
 
     function hasRole(role) {
-      return isSignedIn() && getUserData().role == role;
+      return isSignedIn() && getRole() == role;
     }
 
     function isSuperAdmin() {
       return hasRole('admin');
     }
 
-    function isRestaurantAdmin(restaurantId) {
-      return hasRole('restaurant_admin') && getUserData().assignedRestaurantId == restaurantId;
-    }
-
     function isRider() {
       return hasRole('rider');
+    }
+
+    function isRestaurantAdmin() {
+      return hasRole('restaurant_admin');
+    }
+
+    function isRestaurantAdminOf(restaurantId) {
+      return isRestaurantAdmin() &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.assignedRestaurantId == restaurantId;
     }
 
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // ── user rules ─────────────────────────────────────────────────────────
+    // ── USER PROFILES ──────────────────────────────────────────────────────
 
     match /users/{userId} {
-      allow read: if isSignedIn() && (isOwner(userId) || isSuperAdmin());
+      allow read: if isSignedIn() && (isOwner(userId) || isSuperAdmin() || isRider() || isRestaurantAdmin());
       allow create: if isSignedIn() && isOwner(userId);
       allow update: if isSignedIn() && isOwner(userId)
         && !request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(['role', 'isBlocked', 'assignedRestaurantId']);
+          .hasAny(['role', 'isBlocked', 'assignedRestaurantId', 'adminId']);
       allow delete: if isSuperAdmin();
 
       match /cart/{cartId} {
-        allow read, write: if isSignedIn() && isOwner(userId);
+        allow read, write: if isOwner(userId);
       }
       match /addresses/{addressId} {
-        allow read, write: if isSignedIn() && isOwner(userId);
+        allow read, write: if isOwner(userId);
+      }
+      match /favorites/{pizzaId} {
+        allow read, write: if isOwner(userId);
       }
     }
 
-    // ── root collections ───────────────────────────────────────────────────
+    // ── RESTAURANTS & MENU ─────────────────────────────────────────────────
 
     match /restaurants/{restaurantId} {
       allow read: if true;
       allow create, delete: if isSuperAdmin();
-      allow update: if isSuperAdmin() || isRestaurantAdmin(restaurantId);
+      allow update: if isSuperAdmin() || isRestaurantAdminOf(restaurantId);
 
       match /menu/{menuId} {
         allow read: if true;
-        allow write: if isSuperAdmin() || isRestaurantAdmin(restaurantId);
+        allow write: if isSuperAdmin() || isRestaurantAdminOf(restaurantId);
       }
     }
+
+    // ── ORDERS & CHECKOUT ──────────────────────────────────────────────────
 
     match /orders/{orderId} {
       allow read: if isSignedIn() && (
         isOwner(resource.data.userId) ||
         isSuperAdmin() ||
-        isRestaurantAdmin(resource.data.restaurantId) ||
-        (isRider() && resource.data.riderId == request.auth.uid) ||
-        (isRider() && resource.data.status == 'Pending')
+        isRestaurantAdminOf(resource.data.restaurantId) ||
+        (isRider() && (resource.data.riderId == request.auth.uid || resource.data.status == 'Pending'))
       );
-      allow create: if isSignedIn(); // Allow app to create (usually backend does this, but for now)
-      allow update: if isSignedIn();
-      allow delete: if isSuperAdmin();
+
+      // Orders are created/deleted only by Cloud Functions for security
+      allow create, delete: if false;
+
+      allow update: if isSuperAdmin()
+        || (isRestaurantAdminOf(resource.data.restaurantId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'preparingAt', 'onTheWayAt', 'riderId', 'riderName', 'riderPhone']))
+        || (isRider() && resource.data.riderId == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'deliveredAt', 'onTheWayAt']))
+        || (isOwner(resource.data.userId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'cancelledAt'])
+            && resource.data.status == 'Pending'
+            && request.resource.data.status == 'Cancelled');
+
+      match /chat/{messageId} {
+        allow read, write: if isSignedIn() && (
+          isOwner(get(/databases/$(database)/documents/orders/$(orderId)).data.userId) ||
+          isSuperAdmin() ||
+          isRestaurantAdminOf(get(/databases/$(database)/documents/orders/$(orderId)).data.restaurantId) ||
+          (isRider() && get(/databases/$(database)/documents/orders/$(orderId)).data.riderId == request.auth.uid)
+        );
+      }
     }
 
     match /order_requests/{requestId} {
-      allow create: if isSignedIn();
+      // Customers create requests, backend validates and moves to 'orders'
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
       allow read: if isSignedIn() && (isOwner(resource.data.userId) || isSuperAdmin());
-      allow delete: if isSuperAdmin();
+      allow update: if false; // Requests are immutable until processed by backend
+      allow delete: if isSuperAdmin() || isOwner(resource.data.userId);
     }
+
+    match /checkouts/{checkoutId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // ── FINANCIALS ─────────────────────────────────────────────────────────
+
+    match /wallets/{walletId} {
+      // Wallet ID matches the User ID (Rider or Restaurant Admin)
+      allow read: if isSignedIn() && (isOwner(walletId) || isSuperAdmin());
+      allow write: if isSuperAdmin();
+
+      match /transactions/{txnId} {
+        allow read: if isSignedIn() && (isOwner(walletId) || isSuperAdmin());
+        allow write: if isSuperAdmin();
+      }
+    }
+
+    match /withdrawal_requests/{requestId} {
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn() && (isOwner(resource.data.userId) || isSuperAdmin());
+      allow update, delete: if isSuperAdmin();
+    }
+
+    match /commissions/{commId} {
+      allow read: if isSuperAdmin() || (isRestaurantAdmin() && resource.data.restaurantId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.assignedRestaurantId);
+      allow write: if isSuperAdmin();
+    }
+
+    // ── CONFIG & PROMOS ────────────────────────────────────────────────────
 
     match /app_config/{docId} {
       allow read: if true;
       allow write: if isSuperAdmin();
-    }
-
-    match /carts/{userId} {
-      allow read, write: if isOwner(userId) || isSuperAdmin();
     }
 
     match /deals/{dealId} {
@@ -101,36 +158,34 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
+    // ── NOTIFICATIONS ──────────────────────────────────────────────────────
+
     match /notifications/{notificationId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
-      allow delete: if isSignedIn();
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isSuperAdmin() || resource.data.adminId == request.auth.uid);
+      allow create: if isSignedIn(); // Allow system-wide notification triggers
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid
+                   && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']);
+      allow delete: if isSuperAdmin() || resource.data.userId == request.auth.uid;
     }
 
-    match /commissions/{commId} {
+    // ── OTHERS ─────────────────────────────────────────────────────────────
+
+    match /invitations/{invitationId} {
+      allow get: if true;
+      allow list, create: if isSuperAdmin();
+      allow delete: if isSuperAdmin();
+      allow update: if (isSignedIn() && request.resource.data.status == 'accepted') || isSuperAdmin();
+    }
+
+    match /audit_logs/{logId} {
+      allow read: if isSuperAdmin() || (isRestaurantAdminOf(resource.data.restaurantId));
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
+    // Catch-all
+    match /{path=**} {
       allow read, write: if isSuperAdmin();
-    }
-
-    match /checkouts/{checkoutId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
-    }
-
-    match /wallets/{walletId} {
-      allow read: if isSignedIn() && (isOwner(walletId) || isSuperAdmin());
-      allow write: if isSuperAdmin();
-
-      match /transactions/{txnId} {
-        allow read: if isSignedIn() && (isOwner(walletId) || isSuperAdmin());
-        allow write: if isSuperAdmin();
-      }
-    }
-
-    match /withdrawal_requests/{requestId} {
-      allow create: if isSignedIn();
-      allow read: if isSignedIn();
-      allow update, delete: if isSuperAdmin();
     }
   }
 }

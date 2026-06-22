@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../models/restaurant_admin_model.dart';
@@ -5,12 +6,18 @@ import '../services/restaurant_admin_service.dart';
 import '../core/constants/firestore_constants.dart';
 
 class RestaurantAdminProvider with ChangeNotifier {
-  final RestaurantAdminService _service = RestaurantAdminService();
+  final RestaurantAdminService _service;
   final _db = FirebaseFirestore.instance;
+
+  RestaurantAdminProvider(this._service);
 
   RestaurantAdminModel? _adminModel;
   bool _isLoading = false;
   String? _error;
+
+  // ── Listeners ─────────────────────────────────────────────────────────────
+  StreamSubscription? _ordersSubscription;
+  StreamSubscription? _menuSubscription;
 
   // ── Live stats ────────────────────────────────────────────────────────────
   int _todayOrdersCount = 0;
@@ -43,6 +50,13 @@ class RestaurantAdminProvider with ChangeNotifier {
   String get restaurantId => _adminModel?.assignedRestaurantId ?? '';
   String get restaurantName => _adminModel?.assignedRestaurantName ?? '';
 
+  @override
+  void dispose() {
+    _ordersSubscription?.cancel();
+    _menuSubscription?.cancel();
+    super.dispose();
+  }
+
   // ── Load admin after login ────────────────────────────────────────────────
   Future<void> loadAdmin(String uid) async {
     _isLoading = true;
@@ -50,9 +64,12 @@ class RestaurantAdminProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      _adminModel = await _service.getRestaurantAdmin(uid);
+      final data = await _service.getRestaurantAdmin(uid);
+      _adminModel = data != null ? RestaurantAdminModel.fromMap(data) : null;
       if (_adminModel != null) {
-        await _fetchStats();
+        _startLiveStats();
+        await _fetchTrends();
+        await _fetchTopSellingItems();
       }
     } catch (e) {
       _error = e.toString();
@@ -63,56 +80,69 @@ class RestaurantAdminProvider with ChangeNotifier {
     }
   }
 
-  /// Fetch today's order count, revenue, pending count, and menu item count.
-  Future<void> _fetchStats() async {
+  /// Starts real-time listeners for dashboard stats to avoid manual refresh
+  void _startLiveStats() {
     if (_adminModel == null) return;
     final restId = _adminModel!.assignedRestaurantId;
+    
+    _ordersSubscription?.cancel();
+    _menuSubscription?.cancel();
 
-    // Today's date range
-    final now = DateTime.now();
-    final startOfDay = DateTime(now.year, now.month, now.day);
-    final endOfDay = startOfDay.add(const Duration(days: 1));
-
-    try {
-      // Today's orders
-      final todaySnap = await _db
-          .collection(FirestoreConstants.orders)
-          .where(FirestoreConstants.restaurantId, isEqualTo: restId)
-          .where(FirestoreConstants.createdAt, isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
-          .where(FirestoreConstants.createdAt, isLessThan: Timestamp.fromDate(endOfDay))
-          .get();
-
-      _todayOrdersCount = todaySnap.docs.length;
-      _todayRevenue = todaySnap.docs.fold<double>(
-        0,
-        (acc, doc) => acc + ((doc.data()[FirestoreConstants.totalAmount] as num?)?.toDouble() ?? 0),
-      );
-
-      // Pending orders
-      final pendingSnap = await _db
-          .collection(FirestoreConstants.orders)
-          .where(FirestoreConstants.restaurantId, isEqualTo: restId)
-          .where(FirestoreConstants.status, isEqualTo: FirestoreConstants.statusPending)
-          .get();
-      _pendingOrdersCount = pendingSnap.docs.length;
-
-      // Menu items
-      final menuSnap = await _db
-          .collection(FirestoreConstants.restaurants)
-          .doc(restId)
-          .collection(FirestoreConstants.menu)
-          .get();
-      _menuItemCount = menuSnap.docs.length;
-
-      await _fetchTrends();
-      await _fetchTopSellingItems();
-
+    // Listen to ALL orders for this restaurant to calculate real-time stats
+    _ordersSubscription = _db
+        .collection(FirestoreConstants.orders)
+        .where(FirestoreConstants.restaurantId, isEqualTo: restId)
+        .snapshots()
+        .listen((snapshot) {
+      _calculateStatsFromSnapshot(snapshot);
       notifyListeners();
-    } catch (e) {
-      debugPrint('RestaurantAdminProvider._fetchStats error: $e');
-    }
+    }, onError: (e) {
+      debugPrint('RestaurantAdminProvider: live stats error: $e');
+    });
+
+    // Also count menu items
+    _menuSubscription = _db.collection(FirestoreConstants.restaurants)
+        .doc(restId)
+        .collection(FirestoreConstants.menu)
+        .snapshots()
+        .listen((snap) {
+          _menuItemCount = snap.docs.length;
+          notifyListeners();
+        }, onError: (e) {
+          debugPrint('RestaurantAdminProvider: menu listener error: $e');
+        });
   }
 
+  void _calculateStatsFromSnapshot(QuerySnapshot<Map<String, dynamic>> snapshot) {
+    final now = DateTime.now();
+    final startOfDay = DateTime(now.year, now.month, now.day);
+    
+    int todayCount = 0;
+    double todayRev = 0;
+    int pendingCount = 0;
+
+    for (var doc in snapshot.docs) {
+      final data = doc.data();
+      final status = data[FirestoreConstants.status];
+      final createdAt = (data[FirestoreConstants.createdAt] as Timestamp?)?.toDate();
+      final amount = (data[FirestoreConstants.totalAmount] as num?)?.toDouble() ?? 0;
+
+      if (status == FirestoreConstants.statusPending) {
+        pendingCount++;
+      }
+
+      if (createdAt != null && createdAt.isAfter(startOfDay)) {
+        todayCount++;
+        todayRev += amount;
+      }
+    }
+
+    _todayOrdersCount = todayCount;
+    _todayRevenue = todayRev;
+    _pendingOrdersCount = pendingCount;
+  }
+
+  /// One-time fetch for trends (since they change less frequently)
   Future<void> _fetchTrends() async {
     if (_adminModel == null) return;
     final restId = _adminModel!.assignedRestaurantId;
@@ -195,11 +225,17 @@ class RestaurantAdminProvider with ChangeNotifier {
     }
   }
 
+  // ── Stream Caching ───────────────────────────────────────────────────────
+  final Map<String, Stream<QuerySnapshot<Map<String, dynamic>>>> _orderStreams = {};
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _menuStream;
+
   /// Real-time stream of orders for the admin's restaurant.
   Stream<QuerySnapshot<Map<String, dynamic>>> ordersStream({String? statusFilter}) {
-    if (_adminModel == null) {
-      return const Stream.empty();
-    }
+    if (_adminModel == null) return const Stream.empty();
+    
+    final filterKey = statusFilter ?? 'All';
+    if (_orderStreams.containsKey(filterKey)) return _orderStreams[filterKey]!;
+
     var query = _db
         .collection(FirestoreConstants.orders)
         .where(FirestoreConstants.restaurantId, isEqualTo: _adminModel!.assignedRestaurantId)
@@ -207,25 +243,43 @@ class RestaurantAdminProvider with ChangeNotifier {
         .limit(50);
 
     if (statusFilter != null && statusFilter != 'All') {
-      query = _db
-          .collection(FirestoreConstants.orders)
-          .where(FirestoreConstants.restaurantId, isEqualTo: _adminModel!.assignedRestaurantId)
-          .where(FirestoreConstants.status, isEqualTo: statusFilter)
-          .orderBy(FirestoreConstants.createdAt, descending: true)
-          .limit(50);
+      query = query.where(FirestoreConstants.status, isEqualTo: statusFilter);
     }
-    return query.snapshots();
+    
+    _orderStreams[filterKey] = query.snapshots().asBroadcastStream();
+    return _orderStreams[filterKey]!;
   }
 
   /// Real-time stream of menu items for the admin's restaurant.
   Stream<QuerySnapshot<Map<String, dynamic>>> menuStream() {
     if (_adminModel == null) return const Stream.empty();
-    return _db
+    if (_menuStream != null) return _menuStream!;
+
+    _menuStream = _db
         .collection(FirestoreConstants.restaurants)
         .doc(_adminModel!.assignedRestaurantId)
         .collection(FirestoreConstants.menu)
         .orderBy(FirestoreConstants.name)
-        .snapshots();
+        .snapshots()
+        .asBroadcastStream();
+        
+    return _menuStream!;
+  }
+
+  Stream<DocumentSnapshot<Map<String, dynamic>>>? _restaurantStream;
+
+  /// Real-time stream of the current restaurant's document
+  Stream<DocumentSnapshot<Map<String, dynamic>>> restaurantStream(String restId) {
+    if (restId.isEmpty) return const Stream.empty();
+    if (_restaurantStream != null) return _restaurantStream!;
+
+    _restaurantStream = _db
+        .collection(FirestoreConstants.restaurants)
+        .doc(restId)
+        .snapshots()
+        .asBroadcastStream();
+        
+    return _restaurantStream!;
   }
 
   /// Real-time stream of audit logs for the admin's restaurant.
@@ -245,9 +299,18 @@ class RestaurantAdminProvider with ChangeNotifier {
     _todayRevenue = 0;
     _pendingOrdersCount = 0;
     _menuItemCount = 0;
+    _ordersSubscription?.cancel();
+    _menuSubscription?.cancel();
+    _orderStreams.clear();
+    _menuStream = null;
+    _restaurantStream = null;
     notifyListeners();
   }
 
-  /// Refresh stats (call after any mutation).
-  Future<void> refresh() => _fetchStats();
+  /// Refresh trends and top items (live stats update automatically)
+  Future<void> refresh() async {
+    await _fetchTrends();
+    await _fetchTopSellingItems();
+    notifyListeners();
+  }
 }

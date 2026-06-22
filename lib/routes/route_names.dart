@@ -42,6 +42,7 @@ class RouteNames {
   static const String wallet = '/wallet';
   static const String privacyPolicy = '/privacy-policy';
   static const String termsOfService = '/terms-of-service';
+  static const String acceptInvitation = '/accept-invitation';
 
   // ── Restaurant admin routes (child admin) ─────────────────────────────────
   static const String restaurantAdminDashboard = '/restaurant-admin-dashboard';

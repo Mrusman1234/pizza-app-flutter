@@ -1,149 +1,145 @@
-import 'dart:convert';
-import 'package:crypto/crypto.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:http/http.dart' as http;
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
+import '../core/constants/app_colors.dart';
+import 'package:flutter/material.dart';
 
 class PaymentService {
-  static final PaymentService _instance = PaymentService._internal();
-  factory PaymentService() => _instance;
+  final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(region: 'asia-south1');
 
-  late final String jazzCashMerchantId;
-  late final String jazzCashPassword;
-  late final String jazzCashIntegritySalt;
-  
-  late final String easyPaisaStoreId;
-  late final String easyPaisaHashKey;
+  /// Initiate Stripe Payment Sheet
+  Future<bool> startStripePayment({
+    required double amount,
+    required String checkoutId,
+    required String email,
+  }) async {
+    if (kIsWeb) {
+      throw Exception("Stripe Payment Sheet is not supported on Web. Please use mobile app or implement Stripe Checkout for Web.");
+    }
+    try {
+      // 1. Call Cloud Function to create PaymentIntent
+      final HttpsCallable callable = _functions.httpsCallable('createStripePayment');
+      final response = await callable.call({
+        'amount': amount,
+        'checkoutId': checkoutId,
+        'email': email,
+        'currency': 'pkr',
+      });
 
-  static const String _jcUrl =
-      'https://sandbox.jazzcash.com.pk/ApplicationAPI/API/2.0/Purchase/DoMWalletTransaction';
-  static const String _epUrl =
-      'https://easypaystg.easypaisa.com.pk/easypay/Index';
+      final clientSecret = response.data['clientSecret'];
+      final ephemeralKey = response.data['ephemeralKey'];
+      final customerId = response.data['customer'];
 
-  PaymentService._internal() {
-    // Load from .env if available, otherwise use sandbox defaults
-    jazzCashMerchantId = dotenv.env['JAZZCASH_MERCHANT_ID'] ?? 'MC00000000';
-    jazzCashPassword = dotenv.env['JAZZCASH_PASSWORD'] ?? 'password';
-    jazzCashIntegritySalt = dotenv.env['JAZZCASH_SALT'] ?? 'salt';
+      if (clientSecret == null) throw Exception("Failed to initialize payment");
 
-    easyPaisaStoreId = dotenv.env['EASYPAISA_STORE_ID'] ?? 'YOUR_STORE_ID';
-    easyPaisaHashKey = dotenv.env['EASYPAISA_HASH_KEY'] ?? 'YOUR_HASH_KEY';
+      // 2. Initialize Payment Sheet
+      await Stripe.instance.initPaymentSheet(
+        paymentSheetParameters: SetupPaymentSheetParameters(
+          paymentIntentClientSecret: clientSecret,
+          customerEphemeralKeySecret: ephemeralKey,
+          customerId: customerId,
+          merchantDisplayName: 'Pizza Hub Vehari',
+          style: ThemeMode.dark,
+          appearance: const PaymentSheetAppearance(
+            colors: PaymentSheetAppearanceColors(
+              primary: AppColors.primary,
+            ),
+          ),
+        ),
+      );
+
+      // 3. Display Payment Sheet
+      await Stripe.instance.presentPaymentSheet();
+
+      return true;
+    } catch (e) {
+      if (e is StripeException) {
+        debugPrint('Stripe Error: ${e.error.localizedMessage}');
+        return false;
+      }
+      debugPrint('Payment Error: $e');
+      rethrow;
+    }
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // JAZZCASH — Mobile Wallet payment
-  // ══════════════════════════════════════════════════════════════════════════
+  /// Initiate JazzCash Payment
+  Future<String> initiateJazzCash({
+    required double amount,
+    required String checkoutId,
+  }) async {
+    try {
+      debugPrint('💳 [JAZZCASH] Initiating payment for Rs $amount (Checkout: $checkoutId)');
+      final HttpsCallable callable = _functions.httpsCallable('initiateJazzCashPayment');
+      final response = await callable.call({
+        'amount': amount,
+        'checkoutId': checkoutId,
+      });
+
+      final String? html = response.data['html'];
+      if (html == null || html.isEmpty) {
+        throw Exception("Server returned empty payment HTML");
+      }
+
+      debugPrint('✅ [JAZZCASH] Received payment HTML (${html.length} chars)');
+      return html;
+    } catch (e) {
+      debugPrint('❌ [JAZZCASH] Initiation Error: $e');
+      rethrow;
+    }
+  }
+
+  /// Verify JazzCash Transaction
+  Future<bool> verifyJazzCash(String transactionId) async {
+    try {
+      final HttpsCallable callable = _functions.httpsCallable('verifyJazzCashPaymentStatus');
+      final response = await callable.call({
+        'transactionId': transactionId,
+      });
+
+      return response.data['success'] == true;
+    } catch (e) {
+      debugPrint('JazzCash Verification Error: $e');
+      return false;
+    }
+  }
+
+  /// Mobile Wallet: JazzCash
   Future<Map<String, dynamic>> payWithJazzCash({
-    required String mobileNumber,   // 03001234567
-    required double amount,          // PKR
+    required String mobileNumber,
+    required double amount,
     required String orderId,
   }) async {
-    final String txnDateTime =
-        DateTime.now().toString().replaceAll(RegExp(r'[^0-9]'), '').substring(0, 14);
-    final String txnRefNo = 'T$txnDateTime';
-    final String amountStr = (amount * 100).toInt().toString(); // paisas
-
-    // Build secure hash (HMAC-SHA256)
-    final String hashString =
-        '$jazzCashIntegritySalt&$txnDateTime&$jazzCashMerchantId&$mobileNumber'
-        '&$txnRefNo&$amountStr&PKR&$jazzCashPassword';
-    final String secureHash = _hmacSha256(jazzCashIntegritySalt, hashString);
-
-    final Map<String, dynamic> body = {
-      "pp_Version": "2.0",
-      "pp_TxnType": "MWALLET",
-      "pp_Language": "EN",
-      "pp_MerchantID": jazzCashMerchantId,
-      "pp_Password": jazzCashPassword,
-      "pp_MobileNumber": mobileNumber,
-      "pp_CNIC": "",
-      "pp_TxnRefNo": txnRefNo,
-      "pp_Amount": amountStr,
-      "pp_TxnCurrency": "PKR",
-      "pp_TxnDateTime": txnDateTime,
-      "pp_BillReference": orderId,
-      "pp_Description": "Pizza Order $orderId",
-      "pp_SecureHash": secureHash,
-    };
-
     try {
-      final response = await http.post(
-        Uri.parse(_jcUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(body),
-      );
-      
-      // In production, we don't trust this HTTP response alone.
-      // We only use this to see if the wallet request was "Sent".
-      final result = jsonDecode(response.body);
-      
-      return {
-        'initiated': result['pp_ResponseCode'] == '000' || result['pp_ResponseCode'] == '124',
-        'message': 'Waiting for bank confirmation...',
-        'checkoutId': orderId, // This is actually our CheckoutId now
-      };
+      final HttpsCallable callable = _functions.httpsCallable('payWithJazzCash');
+      final response = await callable.call({
+        'mobileNumber': mobileNumber,
+        'amount': amount,
+        'orderId': orderId,
+      });
+      return Map<String, dynamic>.from(response.data);
     } catch (e) {
+      debugPrint('JazzCash Payment Error: $e');
       return {'initiated': false, 'message': e.toString()};
     }
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // EASYPAISA — Mobile Account payment
-  // ══════════════════════════════════════════════════════════════════════════
+  /// Mobile Wallet: EasyPaisa
   Future<Map<String, dynamic>> payWithEasyPaisa({
-    required String mobileNumber,   // 03001234567
+    required String mobileNumber,
     required double amount,
     required String orderId,
   }) async {
-    final String txnDateTime =
-        DateTime.now().toString().replaceAll(RegExp(r'[^0-9]'), '').substring(0, 14);
-    final String amountStr = amount.toStringAsFixed(2);
-
-    // Build hash
-    final String hashInput =
-        'amount=$amountStr&orderRefNum=$orderId'
-        '&paymentMethod=MA_PAY_PAGE&storeId=$easyPaisaStoreId'
-        '&timeStamp=$txnDateTime&token=$easyPaisaHashKey';
-    final String hash = _sha256Hash(hashInput);
-
-    final Map<String, dynamic> body = {
-      "storeId": easyPaisaStoreId,
-      "amount": amountStr,
-      "postBackURL": "https://yourapp.com/payment-callback",
-      "orderRefNum": orderId,
-      "expiryDate": txnDateTime,
-      "autoRedirect": 0,
-      "paymentMethod": "MA_PAY_PAGE",
-      "mobileAccountNo": mobileNumber,
-      "emailAddress": "",
-      "timeStamp": txnDateTime,
-      "encryptedHashRequest": hash,
-    };
-
     try {
-      final response = await http.post(
-        Uri.parse(_epUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(body),
-      );
-      final result = jsonDecode(response.body);
-      return {
-        'success': result['responseCode'] == '0000',
-        'message': result['responseDesc'] ?? 'Unknown error',
-        'txnRef': orderId,
-        'raw': result,
-      };
+      final HttpsCallable callable = _functions.httpsCallable('payWithEasyPaisa');
+      final response = await callable.call({
+        'mobileNumber': mobileNumber,
+        'amount': amount,
+        'orderId': orderId,
+      });
+      return Map<String, dynamic>.from(response.data);
     } catch (e) {
-      return {'success': false, 'message': e.toString()};
+      debugPrint('EasyPaisa Payment Error: $e');
+      return {'initiated': false, 'message': e.toString()};
     }
-  }
-
-  // ── Helpers ────────────────────────────────────────────────────────────────
-  String _hmacSha256(String key, String data) {
-    final hmac = Hmac(sha256, utf8.encode(key));
-    return hmac.convert(utf8.encode(data)).toString().toUpperCase();
-  }
-
-  String _sha256Hash(String data) {
-    return sha256.convert(utf8.encode(data)).toString();
   }
 }

@@ -49,7 +49,7 @@ class PdfService {
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
                       pw.Text('Bill To:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                      pw.Text(order.userId, style: const pw.TextStyle(fontSize: 10)), // In production, replace with user name
+                      pw.Text(order.userName ?? order.userId, style: const pw.TextStyle(fontSize: 10)),
                       pw.Container(width: 200, child: pw.Text(order.deliveryAddress, style: const pw.TextStyle(fontSize: 10))),
                     ],
                   ),
@@ -109,12 +109,12 @@ class PdfService {
                       pw.Row(
                         children: [
                           pw.Text('Subtotal: '),
-                          pw.Text('Rs. ${order.totalAmount.toInt() - 150}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), // Rough math for demo
+                          pw.Text('Rs. ${(order.subtotal ?? (order.totalAmount - (order.deliveryFee ?? 0) - (order.tax ?? 0))).toInt()}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
                         ],
                       ),
                       pw.SizedBox(height: 4),
-                      pw.Text('Delivery Fee: Rs. 50'),
-                      pw.Text('GST (5%): Rs. 100'),
+                      pw.Text('Delivery Fee: Rs. ${(order.deliveryFee ?? 0).toInt()}'),
+                      pw.Text('Tax (GST): Rs. ${(order.tax ?? 0).toInt()}'),
                       pw.Divider(color: PdfColors.grey),
                       pw.Row(
                         children: [

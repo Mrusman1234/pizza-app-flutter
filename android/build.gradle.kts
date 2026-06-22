@@ -11,10 +11,10 @@ subprojects {
     afterEvaluate {
         val android = project.extensions.findByName("android")
         if (android is com.android.build.api.dsl.ApplicationExtension) {
-            android.compileSdk = 36
+            android.compileSdk = 37
             android.defaultConfig {
                 minSdk    = 24
-                targetSdk = 36
+                targetSdk = 37
             }
             android.compileOptions {
                 sourceCompatibility            = JavaVersion.VERSION_17
@@ -40,5 +40,6 @@ subprojects {
 }
 
 tasks.register<Delete>("clean") {
+    description = "Deletes the build directory"
     delete(rootProject.layout.buildDirectory)
 }

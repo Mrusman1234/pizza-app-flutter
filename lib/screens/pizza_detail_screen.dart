@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../core/constants/app_colors.dart';
-import '../../models/pizza_model.dart';
-import '../../providers/cart_provider.dart';
-import '../../providers/auth_provider.dart';
-import '../../widgets/custom_button.dart';
-import '../../widgets/custom_textfield.dart';
-import '../../services/firestore_service.dart';
+import '../core/constants/app_colors.dart';
+import '../models/pizza_model.dart';
+import '../providers/cart_provider.dart';
+import '../providers/auth_provider.dart';
+import '../widgets/custom_button.dart';
+import '../widgets/custom_textfield.dart';
+import '../services/firestore_service.dart';
 
 class PizzaDetailScreen extends StatefulWidget {
   const PizzaDetailScreen({super.key});

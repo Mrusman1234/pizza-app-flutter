@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../../core/constants/app_colors.dart';
-import '../../routes/route_names.dart';
-import '../../services/firestore_service.dart';
-import '../../widgets/custom_button.dart';
+import '../core/constants/app_colors.dart';
+import '../routes/route_names.dart';
+import '../services/firestore_service.dart';
+import '../widgets/custom_button.dart';
 
 class AddressManagementScreen extends StatefulWidget {
   const AddressManagementScreen({super.key});

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../core/constants/app_colors.dart';
-import '../../services/firestore_service.dart';
+import '../core/constants/app_colors.dart';
+import '../services/firestore_service.dart';
 import 'restaurant_menu_screen.dart';
 
 class RestaurantsScreen extends StatefulWidget {

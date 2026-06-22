@@ -1,15 +1,16 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:provider/provider.dart';
-import '../../core/constants/app_colors.dart';
-import '../../core/constants/firestore_constants.dart';
-import '../../services/firestore_service.dart';
-import '../../widgets/admin_sidebar.dart';
-import '../../widgets/admin_notification_banner.dart';
-import '../../routes/route_names.dart';
-import '../../providers/notification_provider.dart';
+import '../core/constants/app_colors.dart';
+import '../core/constants/firestore_constants.dart';
+import '../services/firestore_service.dart';
+import '../widgets/admin_sidebar.dart';
+import '../widgets/admin_notification_banner.dart';
+import '../routes/route_names.dart';
+import '../providers/notification_provider.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -27,12 +28,44 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   String? selectedRestaurantId;
   List<Map<String, dynamic>> restaurantsList = [];
   bool _showRevenueChart = true;
+  StreamSubscription? _restaurantsSub;
+  Stream<Map<String, dynamic>>? _statsStream;
+  Stream<QuerySnapshot>? _chartStream;
 
   @override
   void initState() {
     super.initState();
     _loadRestaurants();
     _initNotifications();
+    _initStatsStream();
+    _initChartStream();
+  }
+
+  void _initStatsStream() {
+    final String? currentAdminId = FirebaseAuth.instance.currentUser?.uid;
+    _statsStream = _firestoreService.getDashboardStats(
+      adminId: currentAdminId,
+      restaurantId: selectedRestaurantId,
+    ).asBroadcastStream();
+  }
+
+  void _initChartStream() {
+    final String? currentAdminId = FirebaseAuth.instance.currentUser?.uid;
+    final sevenDaysAgo = DateTime.now().subtract(const Duration(days: 6));
+    final startOfDay = DateTime(sevenDaysAgo.year, sevenDaysAgo.month, sevenDaysAgo.day);
+
+    Query query = FirebaseFirestore.instance.collection(FirestoreConstants.orders);
+    if (currentAdminId != null) query = query.where(FirestoreConstants.adminId, isEqualTo: currentAdminId);
+    if (selectedRestaurantId != null) query = query.where(FirestoreConstants.restaurantId, isEqualTo: selectedRestaurantId);
+    query = query.where(FirestoreConstants.createdAt, isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay));
+    
+    _chartStream = query.snapshots().asBroadcastStream();
+  }
+
+  @override
+  void dispose() {
+    _restaurantsSub?.cancel();
+    super.dispose();
   }
 
   void _initNotifications() {
@@ -48,7 +81,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final String? currentAdminId = FirebaseAuth.instance.currentUser?.uid;
     if (currentAdminId == null) return;
 
-    _firestoreService.getRestaurants(adminId: currentAdminId).listen((data) {
+    _restaurantsSub?.cancel();
+    _restaurantsSub = _firestoreService.getRestaurants(adminId: currentAdminId).listen((data) {
       if (mounted) {
         setState(() {
           restaurantsList = data.map((r) => {
@@ -62,8 +96,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final String? currentAdminId = FirebaseAuth.instance.currentUser?.uid;
-
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Stack(
@@ -73,10 +105,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               const AdminSidebar(activeItem: 'Dashboard'),
               Expanded(
                 child: StreamBuilder<Map<String, dynamic>>(
-                  stream: _firestoreService.getDashboardStats(
-                    adminId: currentAdminId,
-                    restaurantId: selectedRestaurantId,
-                  ),
+                  stream: _statsStream,
                   builder: (context, snapshot) {
                     final stats = snapshot.data ?? {};
                     final int totalOrders = stats[FirestoreConstants.totalOrders] ?? 0;
@@ -111,7 +140,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                         ...restaurantsList.map((r) => DropdownMenuItem<String?>(value: r['id'], child: Text(r['name']))),
                                       ],
                                       onChanged: (val) {
-                                        setState(() => selectedRestaurantId = val);
+                                        setState(() {
+                                          selectedRestaurantId = val;
+                                          _initStatsStream();
+                                          _initChartStream();
+                                        });
                                       },
                                     ),
                                   ),
@@ -298,7 +331,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                               const SizedBox(height: 32),
 
                                               // ── Trend Charts ──
-                                              _buildChartSection(currentAdminId, selectedRestaurantId),
+                                              _buildChartSection(),
                                               const SizedBox(height: 32),
 
                                               // ── Quick Actions ──
@@ -454,17 +487,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  Widget _buildChartSection(String? adminId, String? restaurantId) {
+  Widget _buildChartSection() {
     final now = DateTime.now();
-    final sevenDaysAgo = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 6));
-
-    Query query = FirebaseFirestore.instance.collection(FirestoreConstants.orders);
-    if (adminId != null) query = query.where(FirestoreConstants.adminId, isEqualTo: adminId);
-    if (restaurantId != null) query = query.where(FirestoreConstants.restaurantId, isEqualTo: restaurantId);
-    query = query.where(FirestoreConstants.createdAt, isGreaterThanOrEqualTo: Timestamp.fromDate(sevenDaysAgo));
 
     return StreamBuilder<QuerySnapshot>(
-      stream: query.snapshots(),
+      stream: _chartStream,
       builder: (context, snapshot) {
         List<double> revenueTrend = List.filled(7, 0.0);
         List<int> orderTrend = List.filled(7, 0);

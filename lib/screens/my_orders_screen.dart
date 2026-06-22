@@ -107,10 +107,15 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
             itemCount: orders.length,
             itemBuilder: (context, index) {
               final order = orders[index];
-              final date = (order[FirestoreConstants.createdAt] as Timestamp?)?.toDate() ?? DateTime.now();
+              final isProcessing = order['isProcessing'] == true;
+              final date = _parseDate(order[FirestoreConstants.createdAt]);
               final formattedDate = DateFormat('MMM dd, yyyy • hh:mm a').format(date);
-              final status = (order[FirestoreConstants.status] ?? 'Pending').toString();
-              final total = order[FirestoreConstants.totalAmount] ?? 0.0;
+              final status = (order[FirestoreConstants.status] ?? (isProcessing ? 'Processing' : 'Pending')).toString();
+              
+              // Robust total parsing
+              final totalVal = order[FirestoreConstants.totalAmount];
+              final total = (totalVal as num? ?? 0.0).toDouble();
+              
               final String rawId = order[FirestoreConstants.id]?.toString() ?? '';
               final orderId = rawId.length > 8 
                   ? rawId.substring(0, 8).toUpperCase()
@@ -121,7 +126,9 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
                 decoration: BoxDecoration(
                   color: isDark ? AppColors.card : Colors.white,
                   borderRadius: BorderRadius.circular(20),
-                  border: isDark ? Border.all(color: AppColors.border) : null,
+                  border: isDark 
+                    ? Border.all(color: isProcessing ? AppColors.primary.withValues(alpha: 0.3) : AppColors.border) 
+                    : null,
                   boxShadow: isDark ? null : [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.05),
@@ -131,7 +138,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
                   ],
                 ),
                 child: InkWell(
-                  onTap: () {
+                  onTap: isProcessing ? null : () {
                     Navigator.pushNamed(
                       context,
                       RouteNames.orderDetails,
@@ -144,18 +151,36 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (isProcessing)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              children: [
+                                const SizedBox(
+                                  width: 12,
+                                  height: 12,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  "Processing your order...",
+                                  style: TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                          ),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              'Order #$orderId',
+                              isProcessing ? 'New Request' : 'Order #$orderId',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold, 
                                 fontSize: 16,
                                 color: isDark ? AppColors.text : Colors.black,
                               ),
                             ),
-                            _buildStatusBadge(status),
+                            _buildStatusBadge(status, isProcessing: isProcessing),
                           ],
                         ),
                         const SizedBox(height: 8),
@@ -265,10 +290,19 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
     );
   }
 
-  Widget _buildStatusBadge(String status) {
+  DateTime _parseDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is String) return DateTime.tryParse(value) ?? DateTime.now();
+    return DateTime.now();
+  }
+
+  Widget _buildStatusBadge(String status, {bool isProcessing = false}) {
     Color color;
     final s = status.toLowerCase();
-    if (s == FirestoreConstants.statusDelivered.toLowerCase()) {
+    
+    if (isProcessing || s == 'draft' || s == 'pendingpayment') {
+      color = AppColors.primary;
+    } else if (s == FirestoreConstants.statusDelivered.toLowerCase()) {
       color = AppColors.green;
     } else if (s == FirestoreConstants.statusPreparing.toLowerCase()) {
       color = AppColors.amber;
@@ -280,6 +314,8 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
       color = Colors.grey;
     }
 
+    final displayText = (s == 'draft' || s == 'pendingpayment') ? 'Processing' : status;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
@@ -288,7 +324,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
         border: Border.all(color: color.withValues(alpha: 0.2)),
       ),
       child: Text(
-        status,
+        displayText,
         style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold),
       ),
     );

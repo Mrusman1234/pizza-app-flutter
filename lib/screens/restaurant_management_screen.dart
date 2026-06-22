@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../core/constants/app_colors.dart';
-import '../../core/constants/firestore_constants.dart';
-import '../../widgets/admin_sidebar.dart';
-import '../../services/firestore_service.dart';
-import '../../routes/route_names.dart';
+import '../core/constants/app_colors.dart';
+import '../core/constants/firestore_constants.dart';
+import '../widgets/admin_sidebar.dart';
+import '../services/firestore_service.dart';
+import '../routes/route_names.dart';
 
 class RestaurantManagementScreen extends StatefulWidget {
   const RestaurantManagementScreen({super.key});
@@ -261,6 +261,8 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
           ElevatedButton(
             onPressed: () async {
               if (nameController.text.isNotEmpty) {
+                final navigator = Navigator.of(context);
+                final messenger = ScaffoldMessenger.of(context);
                 try {
                   await _firestoreService.addRestaurant({
                     FirestoreConstants.name: nameController.text,
@@ -268,15 +270,11 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
                     'isEnabled': true,
                     'createdAt': FieldValue.serverTimestamp(),
                   });
-                  if (mounted) {
-                    Navigator.of(context).pop();
-                  }
+                  navigator.pop();
                 } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Error: $e')),
-                    );
-                  }
+                  messenger.showSnackBar(
+                    SnackBar(content: Text('Error: $e')),
+                  );
                 }
               }
             },

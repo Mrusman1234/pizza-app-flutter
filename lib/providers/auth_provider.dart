@@ -5,6 +5,7 @@ import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
+import '../services/notification_service.dart';
 import '../routes/route_names.dart';
 import 'cart_provider.dart';
 
@@ -37,6 +38,11 @@ class AppAuthProvider with ChangeNotifier {
         final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
         if (doc.exists) {
           _userModel = UserModel.fromMap(doc.data()!);
+          
+          // Update FCM Token on successful data fetch
+          if (!kIsWeb) {
+            NotificationService().updateToken();
+          }
           
           if (context != null && context.mounted) {
             final cartProvider = Provider.of<CartProvider>(context, listen: false);
@@ -155,16 +161,28 @@ class AppAuthProvider with ChangeNotifier {
   Future<bool> deleteAccount(BuildContext context) async {
     _isLoading = true;
     notifyListeners();
-    final success = await _authService.deleteAccount();
-    if (success) {
-      _userModel = null;
-      if (context.mounted) {
-        Provider.of<CartProvider>(context, listen: false).clearLocalCart();
+    try {
+      final success = await _authService.deleteAccount();
+      if (success) {
+        _userModel = null;
+        if (context.mounted) {
+          Provider.of<CartProvider>(context, listen: false).clearLocalCart();
+        }
       }
+      _isLoading = false;
+      notifyListeners();
+      return success;
+    } catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      // Show error via SnackBar if context is available
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceAll('Exception: ', '')), backgroundColor: Colors.red),
+        );
+      }
+      return false;
     }
-    _isLoading = false;
-    notifyListeners();
-    return success;
   }
 
   Future<bool> resetPassword(String email) async {

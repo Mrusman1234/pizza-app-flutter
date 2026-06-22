@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../../core/constants/app_colors.dart';
-import '../../models/pizza_model.dart';
-import '../../models/restaurant_model.dart';
-import '../../providers/auth_provider.dart';
-import '../../providers/cart_provider.dart';
-import '../../providers/restaurant_provider.dart';
-import '../../routes/route_names.dart';
+import '../core/constants/app_colors.dart';
+import '../models/pizza_model.dart';
+import '../models/restaurant_model.dart';
+import '../providers/auth_provider.dart';
+import '../providers/cart_provider.dart';
+import '../providers/restaurant_provider.dart';
+import '../routes/route_names.dart';
 import '../widgets/shimmer_loader.dart';
 
 class RestaurantMenuScreen extends StatefulWidget {

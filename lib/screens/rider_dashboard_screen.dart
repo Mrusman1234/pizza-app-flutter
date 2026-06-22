@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../core/constants/firestore_constants.dart';
-import '../../routes/route_names.dart';
-import '../../providers/auth_provider.dart';
-import '../../providers/rider_provider.dart';
-import '../../core/constants/app_colors.dart';
-import '../../widgets/custom_button.dart';
-import '../../providers/notification_provider.dart';
-import '../../services/firestore_service.dart';
+import '../core/constants/firestore_constants.dart';
+import '../routes/route_names.dart';
+import '../providers/auth_provider.dart';
+import '../providers/rider_provider.dart';
+import '../core/constants/app_colors.dart';
+import '../widgets/custom_button.dart';
+import '../providers/notification_provider.dart';
+import '../services/firestore_service.dart';
 
 class RiderDashboardScreen extends StatefulWidget {
   const RiderDashboardScreen({super.key});
@@ -62,9 +62,13 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
   }
 
   Future<void> _showPinDialog(String orderId, String? correctPin) async {
+    final authProvider = context.read<AppAuthProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+
     if (correctPin == null) {
       // Fallback for older orders without a PIN
-      await _firestoreService.completeOrder(orderId, context.read<AppAuthProvider>().user!.uid);
+      await _firestoreService.completeOrder(orderId, authProvider.user!.uid);
+      messenger.showSnackBar(const SnackBar(content: Text('✅ Delivery Completed!'), backgroundColor: Colors.green));
       return;
     }
 
@@ -112,10 +116,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
     );
 
     if (verified == true) {
-      if (!context.mounted) return;
-      final uid = context.read<AppAuthProvider>().user!.uid;
+      final uid = authProvider.user!.uid;
       await _firestoreService.completeOrder(orderId, uid);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Delivery Completed!'), backgroundColor: Colors.green));
+      messenger.showSnackBar(const SnackBar(content: Text('✅ Delivery Completed!'), backgroundColor: Colors.green));
     }
   }
 
@@ -335,7 +338,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen> {
         onPressed: () async {
           final auth = context.read<AppAuthProvider>();
           await _firestoreService.acceptOrder(orderId, auth.user!.uid, auth.user!.name);
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order Accepted! Check \"My Orders\"')));
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order Accepted! Check "My Orders"')));
         },
       );
     }

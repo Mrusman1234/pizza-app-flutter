@@ -11,6 +11,7 @@ class UserModel {
   final List<String>? addresses;
   final String? status; // For riders: 'available', 'busy', 'offline'
   final String? activeOrderId;
+  final String? fcmToken;
 
   final bool pushEnabled;
   final bool smsEnabled;
@@ -35,6 +36,7 @@ class UserModel {
     this.addresses,
     this.status,
     this.activeOrderId,
+    this.fcmToken,
     this.assignedRestaurantId,    // NEW
     this.assignedRestaurantName,  // NEW
     this.pushEnabled = true,
@@ -58,6 +60,7 @@ class UserModel {
       'addresses': addresses,
       'status': status,
       'activeOrderId': activeOrderId,
+      'fcmToken': fcmToken,
       'assignedRestaurantId': assignedRestaurantId,    // NEW
       'assignedRestaurantName': assignedRestaurantName, // NEW
       'pushEnabled': pushEnabled,
@@ -77,6 +80,7 @@ class UserModel {
       addresses: List<String>.from(map['addresses'] ?? []),
       status: map['status'],
       activeOrderId: map['activeOrderId'],
+      fcmToken: map['fcmToken'],
       assignedRestaurantId: map['assignedRestaurantId'],    // NEW
       assignedRestaurantName: map['assignedRestaurantName'], // NEW
       pushEnabled: map['pushEnabled'] ?? true,

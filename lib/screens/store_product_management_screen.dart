@@ -499,7 +499,7 @@ class _StoreProductManagementScreenState extends State<StoreProductManagementScr
                                       borderRadius: BorderRadius.circular(12),
                                       child: imageUrl != null && imageUrl.toString().isNotEmpty
                                         ? Image.network(imageUrl, width: 60, height: 60, fit: BoxFit.cover,
-                                            errorBuilder: (_, __, ___) => _imagePlaceholder())
+                                            errorBuilder: (context, error, stackTrace) => _imagePlaceholder())
                                         : _imagePlaceholder(),
                                     ),
                                   ],

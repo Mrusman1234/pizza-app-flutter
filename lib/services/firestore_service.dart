@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -1147,12 +1148,16 @@ class FirestoreService {
     required String userId,
     required List<CartGroup> cartGroups,
     required String address,
-    required String userPhone, // Added for validation
-    required String userName,  // Added for validation
+    required String userPhone,
+    required String userName,
     double? lat,
     double? lng,
     required String paymentMethod,
+    double? baseDeliveryFee,
+    double? taxRate,
+    double? discountAmount,
     String? promoCode,
+    String? checkoutId,
   }) async {
     try {
       if (userId.isEmpty) throw Exception("User ID is empty");
@@ -1169,26 +1174,33 @@ class FirestoreService {
       // A Cloud Function should watch this collection, verify prices, and 
       // create the final Order document.
       
-      final String checkoutId = _db.collection('checkouts').doc().id;
+      final String finalCheckoutId = checkoutId ?? _db.collection('checkouts').doc().id;
       final batch = _db.batch();
       final String deliveryPin = (1000 + Random().nextInt(9000)).toString();
+
+      final double grandSubtotal = cartGroups.fold(0, (sum, g) => sum + g.subtotal);
 
       for (var group in cartGroups) {
         final requestRef = _db.collection('order_requests').doc();
         
+        // Calculate proportional discount for this restaurant
+        double groupDiscount = 0;
+        if (discountAmount != null && discountAmount > 0 && grandSubtotal > 0) {
+          groupDiscount = (group.subtotal / grandSubtotal) * discountAmount;
+        }
+
         final requestData = {
           'userId': userId,
           'userName': userName,
           'userPhone': userPhone,
-          'parentCheckoutId': checkoutId,
+          'parentCheckoutId': finalCheckoutId,
           'restaurantId': group.restaurantId,
           'restaurantName': group.restaurantName,
           'items': group.items.map((item) => {
+            ...item.toMap(),
+            'name': item.pizza.name,
+            'price': item.itemPrice,
             'pizzaId': item.pizza.id,
-            'quantity': item.quantity,
-            'size': item.size,
-            'extraToppings': item.extraToppings,
-            'instructions': item.instructions,
           }).toList(),
           'address': address,
           'lat': lat,
@@ -1196,8 +1208,15 @@ class FirestoreService {
           'paymentMethod': paymentMethod,
           'promoCode': promoCode,
           'deliveryPin': deliveryPin,
+          'baseDeliveryFee': baseDeliveryFee ?? group.baseDeliveryFee,
+          'deliveryFee': baseDeliveryFee ?? group.deliveryFee,
+          'taxRate': taxRate ?? group.taxRate,
+          'subtotal': group.subtotal,
+          'tax': group.tax,
+          'discountAmount': groupDiscount,
+          'totalAmount': (group.subtotal - groupDiscount + (baseDeliveryFee ?? group.deliveryFee) + group.tax),
           'createdAt': FieldValue.serverTimestamp(),
-          'status': 'Draft',
+          'status': paymentMethod == 'Cash on Delivery' ? 'Draft' : 'PendingPayment',
         };
 
         batch.set(requestRef, requestData);
@@ -1290,24 +1309,80 @@ class FirestoreService {
 
   Stream<List<Map<String, dynamic>>> getOrders(String userId) {
     if (userId.isEmpty) return Stream.value([]);
-    return _db
+
+    // Stream 1: Finalized orders
+    final ordersStream = _db
         .collection(FirestoreConstants.orders)
         .where(FirestoreConstants.userId, isEqualTo: userId)
-        .snapshots()
-        .map((snapshot) {
-      final orders = snapshot.docs
-          .map((doc) => <String, dynamic>{
-                ...doc.data(),
-                FirestoreConstants.id: doc.id,
-              })
-          .toList();
-      orders.sort((a, b) {
-        final aTime = (a[FirestoreConstants.createdAt] as Timestamp?)?.toDate() ?? DateTime(0);
-        final bTime = (b[FirestoreConstants.createdAt] as Timestamp?)?.toDate() ?? DateTime(0);
+        .snapshots();
+
+    // Stream 2: Pending order requests (Processing/Draft)
+    final requestsStream = _db
+        .collection('order_requests')
+        .where('userId', isEqualTo: userId)
+        .snapshots();
+
+    // We manually combine these streams since we don't have RxDart
+    final controller = StreamController<List<Map<String, dynamic>>>();
+    List<Map<String, dynamic>> lastOrders = [];
+    List<Map<String, dynamic>> lastRequests = [];
+
+    void emitCombined() {
+      if (controller.isClosed) return;
+      
+      // Combine both lists
+      final List<Map<String, dynamic>> combined = [];
+      
+      // Add requests first (usually they are the most recent)
+      for (var req in lastRequests) {
+        combined.add({
+          ...req,
+          'isProcessing': true,
+          FirestoreConstants.status: req[FirestoreConstants.status] ?? 'Processing',
+        });
+      }
+      
+      // Add finalized orders
+      combined.addAll(lastOrders);
+
+      // Sort by createdAt descending
+      combined.sort((a, b) {
+        final aTime = _parseDateTime(a[FirestoreConstants.createdAt]);
+        final bTime = _parseDateTime(b[FirestoreConstants.createdAt]);
         return bTime.compareTo(aTime);
       });
-      return orders;
+
+      controller.add(combined);
+    }
+
+    final sub1 = ordersStream.listen((snap) {
+      lastOrders = snap.docs.map((doc) => {
+        ...doc.data(),
+        FirestoreConstants.id: doc.id,
+      }).toList();
+      emitCombined();
     });
+
+    final sub2 = requestsStream.listen((snap) {
+      lastRequests = snap.docs.map((doc) => {
+        ...doc.data(),
+        FirestoreConstants.id: doc.id,
+      }).toList();
+      emitCombined();
+    });
+
+    controller.onCancel = () {
+      sub1.cancel();
+      sub2.cancel();
+    };
+
+    return controller.stream;
+  }
+
+  DateTime _parseDateTime(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is String) return DateTime.tryParse(value) ?? DateTime(0);
+    return DateTime(0);
   }
 
   Stream<List<Map<String, dynamic>>> getCustomers({String? adminId}) {
@@ -1344,6 +1419,20 @@ class FirestoreService {
               FirestoreConstants.id: doc.id,
             })
         .toList());
+  }
+
+  Future<void> clearAllOrders() async {
+    try {
+      final snapshot = await _db.collection(FirestoreConstants.orders).get();
+      final batch = _db.batch();
+      for (var doc in snapshot.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    } catch (e) {
+      debugPrint('FirestoreService.clearAllOrders error: $e');
+      rethrow;
+    }
   }
 
   Future<void> updateOrderStatus(String orderId, String status) async {
@@ -1569,6 +1658,65 @@ class FirestoreService {
       debugPrint("Error setting default address: $e");
       rethrow;
     }
+  }
+
+  /// ── ACCOUNT DELETION LOGIC ───────────────────────────────────────
+  /// Checks for active orders and cleans up all user-related Firestore data.
+  Future<void> deleteUserData(String userId) async {
+    if (userId.isEmpty) return;
+
+    // 1. Check for Active Orders
+    final activeOrders = await _db.collection(FirestoreConstants.orders)
+        .where(FirestoreConstants.userId, isEqualTo: userId)
+        .where(FirestoreConstants.status, whereIn: [
+          FirestoreConstants.statusPending,
+          FirestoreConstants.statusConfirmed,
+          FirestoreConstants.statusPreparing,
+          FirestoreConstants.statusOnTheWay
+        ])
+        .limit(1)
+        .get();
+
+    if (activeOrders.docs.isNotEmpty) {
+      throw Exception("Cannot delete account with active orders. Please wait for completion or cancel them.");
+    }
+
+    final batch = _db.batch();
+
+    // 2. Delete Addresses
+    final addresses = await _db.collection(FirestoreConstants.users)
+        .doc(userId)
+        .collection(FirestoreConstants.addresses)
+        .get();
+    for (var doc in addresses.docs) {
+      batch.delete(doc.reference);
+    }
+
+    // 3. Delete Favorites
+    final favorites = await _db.collection(FirestoreConstants.users)
+        .doc(userId)
+        .collection('favorites')
+        .get();
+    for (var doc in favorites.docs) {
+      batch.delete(doc.reference);
+    }
+
+    // 4. Delete Cart
+    batch.delete(_db.collection(FirestoreConstants.cart).doc(userId));
+
+    // 5. Delete Notifications
+    final notifications = await _db.collection(FirestoreConstants.notifications)
+        .where(FirestoreConstants.userId, isEqualTo: userId)
+        .get();
+    for (var doc in notifications.docs) {
+      batch.delete(doc.reference);
+    }
+
+    // 6. Delete User Profile
+    batch.delete(_db.collection(FirestoreConstants.users).doc(userId));
+
+    await batch.commit();
+    debugPrint("✅ Firestore cleanup complete for user: $userId");
   }
 
   Future<Map<String, dynamic>?> getDefaultAddress(String userId) async {

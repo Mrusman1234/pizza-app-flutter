@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../core/constants/app_colors.dart';
 import '../models/restaurant_admin_model.dart';
+import '../models/invitation_model.dart';
 import '../providers/auth_provider.dart';
 import '../services/restaurant_admin_service.dart';
 import '../services/firestore_service.dart';
@@ -25,8 +27,6 @@ class _SuperAdminRestaurantAdminsScreenState
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
-  final _passwordCtrl = TextEditingController();
-  bool _obscure = true;
   bool _isCreating = false;
   String? _selectedRestaurantId;
   String? _selectedRestaurantName;
@@ -36,13 +36,17 @@ class _SuperAdminRestaurantAdminsScreenState
   void dispose() {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
-    _passwordCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _create() async {
-    if (!_formKey.currentState!.validate()) return;
+  Future<void> _sendInvite() async {
+    debugPrint('🚀 [DEBUG] _sendInvite button clicked');
+    if (!_formKey.currentState!.validate()) {
+      debugPrint('⚠️ [DEBUG] Form validation failed');
+      return;
+    }
     if (_selectedRestaurantId == null) {
+      debugPrint('⚠️ [DEBUG] No restaurant selected');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content: Text('Please select a restaurant'),
@@ -53,21 +57,22 @@ class _SuperAdminRestaurantAdminsScreenState
 
     setState(() => _isCreating = true);
     final superAdminId = context.read<AppAuthProvider>().user?.uid;
+    debugPrint('🔍 [DEBUG] Current Super Admin ID: $superAdminId');
 
     try {
-      await _service.createRestaurantAdmin(
+      debugPrint('⏳ [DEBUG] Calling _service.sendInvitation...');
+      await _service.sendInvitation(
         email: _emailCtrl.text.trim(),
-        password: _passwordCtrl.text.trim(),
         name: _nameCtrl.text.trim(),
         restaurantId: _selectedRestaurantId!,
         restaurantName: _selectedRestaurantName!,
         permissions: _permissions,
         superAdminId: superAdminId,
       );
+      debugPrint('✅ [DEBUG] _service.sendInvitation returned successfully');
 
       _nameCtrl.clear();
       _emailCtrl.clear();
-      _passwordCtrl.clear();
       setState(() {
         _selectedRestaurantId = null;
         _selectedRestaurantName = null;
@@ -78,20 +83,25 @@ class _SuperAdminRestaurantAdminsScreenState
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: Text('Restaurant admin created'),
+              content: Text('Invitation email sent'),
               backgroundColor: AppColors.green),
         );
       }
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('❌ [DEBUG] Error in _sendInvite: $e');
+      debugPrint('📜 [DEBUG] Stack trace: $stack');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text(e.toString()),
+              content: Text('Failed to send invitation: $e'),
               backgroundColor: Colors.redAccent),
         );
       }
     } finally {
-      setState(() => _isCreating = false);
+      debugPrint('🔄 [DEBUG] _sendInvite flow completed, resetting loading state');
+      if (mounted) {
+        setState(() => _isCreating = false);
+      }
     }
   }
 
@@ -124,8 +134,35 @@ class _SuperAdminRestaurantAdminsScreenState
         superAdminId: superAdminId);
   }
 
+  Widget _buildErrorWidget(String title, Object? error) {
+    debugPrint('🔥 [UI_ERROR] $title: $error');
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.redAccent.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.redAccent, width: 0.5),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 18),
+              const SizedBox(width: 8),
+              Text(title, style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 13)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(error.toString(), style: const TextStyle(color: Colors.white70, fontSize: 11)),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // ...
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Row(
@@ -191,9 +228,6 @@ class _SuperAdminRestaurantAdminsScreenState
             _formField('Email', _emailCtrl, Icons.email_rounded,
                 keyboardType: TextInputType.emailAddress),
             const SizedBox(height: 10),
-            _formField('Password', _passwordCtrl, Icons.lock_rounded,
-                obscure: true),
-            const SizedBox(height: 10),
             // Restaurant picker
             StreamBuilder<List<Map<String, dynamic>>>(
               stream: _firestoreService.getRestaurants(),
@@ -248,7 +282,15 @@ class _SuperAdminRestaurantAdminsScreenState
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
-              children: ['orders', 'menu', 'stats'].map((perm) {
+              runSpacing: 8,
+              children: [
+                'orders',
+                'menu',
+                'stats',
+                'notifications',
+                'analytics',
+                'commissions'
+              ].map((perm) {
                 final checked = _permissions.contains(perm);
                 return GestureDetector(
                   onTap: () {
@@ -307,7 +349,7 @@ class _SuperAdminRestaurantAdminsScreenState
               width: double.infinity,
               height: 46,
               child: ElevatedButton(
-                onPressed: _isCreating ? null : _create,
+                onPressed: _isCreating ? null : _sendInvite,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
@@ -321,7 +363,7 @@ class _SuperAdminRestaurantAdminsScreenState
                         height: 20,
                         child: CircularProgressIndicator(
                             color: Colors.white, strokeWidth: 2))
-                    : const Text('Create Admin',
+                    : const Text('Send Invitation',
                         style: TextStyle(
                             fontWeight: FontWeight.w600, fontSize: 14)),
               ),
@@ -336,7 +378,7 @@ class _SuperAdminRestaurantAdminsScreenState
       {bool obscure = false, TextInputType? keyboardType}) {
     return TextFormField(
       controller: ctrl,
-      obscureText: obscure && _obscure,
+      obscureText: obscure && obscure,
       keyboardType: keyboardType,
       style: const TextStyle(color: AppColors.text, fontSize: 13),
       validator: (v) =>
@@ -349,11 +391,11 @@ class _SuperAdminRestaurantAdminsScreenState
         suffixIcon: obscure
             ? IconButton(
                 icon: Icon(
-                  _obscure ? Icons.visibility_off : Icons.visibility,
+                  obscure ? Icons.visibility_off : Icons.visibility,
                   color: AppColors.subtle,
                   size: 18,
                 ),
-                onPressed: () => setState(() => _obscure = !_obscure),
+                onPressed: () => setState(() => obscure = !obscure),
               )
             : null,
         filled: true,
@@ -377,43 +419,184 @@ class _SuperAdminRestaurantAdminsScreenState
   }
 
   Widget _buildAdminList() {
-    return StreamBuilder<List<RestaurantAdminModel>>(
-      stream: _service.getAllRestaurantAdmins(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-              child: CircularProgressIndicator(color: AppColors.primary));
-        }
-        final admins = snapshot.data ?? [];
-        if (admins.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+    return Column(
+      children: [
+        // ── PENDING INVITATIONS ─────────────────────────────────────────────
+        StreamBuilder<List<InvitationModel>>(
+          stream: _service.getPendingInvitations(),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return _buildErrorWidget('Invitations Error', snapshot.error);
+            }
+            final invites = snapshot.data ?? [];
+            if (invites.isEmpty && snapshot.connectionState == ConnectionState.active) {
+              return const SizedBox.shrink();
+            }
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Padding(
+                padding: EdgeInsets.all(20),
+                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              );
+            }
+            
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.people_outline_rounded,
-                    color: AppColors.subtle, size: 48),
-                const SizedBox(height: 12),
-                const Text('No restaurant admins yet',
-                    style: TextStyle(color: AppColors.subtle)),
-                const SizedBox(height: 8),
-                TextButton.icon(
-                  onPressed: () => setState(() => _showForm = true),
-                  icon: const Icon(Icons.add_rounded,
-                      color: AppColors.primary, size: 18),
-                  label: const Text('Create one',
-                      style: TextStyle(color: AppColors.primary)),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Text(
+                    'Pending Invitations',
+                    style: TextStyle(
+                        color: AppColors.subtle,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1),
+                  ),
                 ),
+                ...invites.map((invite) => Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      child: _buildInviteCard(invite),
+                    )),
+                const Divider(height: 32, indent: 16, endIndent: 16),
+              ],
+            );
+          },
+        ),
+
+        // ── ACTIVE ADMINS ───────────────────────────────────────────────────
+        Expanded(
+          child: StreamBuilder<List<RestaurantAdminModel>>(
+            stream: _service.getAllRestaurantAdmins(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                    child: CircularProgressIndicator(color: AppColors.primary));
+              }
+              final admins = snapshot.data ?? [];
+              
+              return ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  if (admins.isNotEmpty)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 12),
+                      child: Text('Active Admins',
+                          style: TextStyle(
+                              color: AppColors.subtle,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1)),
+                    ),
+                  if (admins.isEmpty)
+                    Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const SizedBox(height: 40),
+                          const Icon(Icons.people_outline_rounded,
+                              color: AppColors.subtle, size: 48),
+                          const SizedBox(height: 12),
+                          const Text('No restaurant admins yet',
+                              style: TextStyle(color: AppColors.subtle)),
+                        ],
+                      ),
+                    )
+                  else
+                    ...admins.map((admin) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: _buildAdminCard(admin),
+                        )),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInviteCard(InvitationModel invite) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.amber.withValues(alpha: 0.3), width: 0.5),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.amber.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Center(
+              child: Icon(Icons.mail_outline_rounded, color: AppColors.amber, size: 20),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(invite.name,
+                    style: const TextStyle(
+                        color: AppColors.text,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13)),
+                Text(invite.email,
+                    style: const TextStyle(
+                        color: AppColors.subtle, fontSize: 11)),
+                const SizedBox(height: 3),
+                Text('Invited to ${invite.assignedRestaurantName}',
+                    style: const TextStyle(
+                        color: AppColors.subtle, fontSize: 10)),
               ],
             ),
-          );
-        }
-        return ListView.separated(
-          padding: const EdgeInsets.all(16),
-          itemCount: admins.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 8),
-          itemBuilder: (_, i) => _buildAdminCard(admins[i]),
-        );
-      },
+          ),
+          Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: (invite.status == 'sent' ? AppColors.green : AppColors.amber).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(invite.status == 'sent' ? 'Sent' : 'Pending',
+                    style: TextStyle(
+                        color: invite.status == 'sent' ? AppColors.green : AppColors.amber,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500)),
+              ),
+              const SizedBox(height: 8),
+              GestureDetector(
+                onTap: () {
+                  final String baseUrl = Uri.base.origin;
+                  final String link = '$baseUrl/#/accept-invitation?token=${invite.id}';
+                  Clipboard.setData(ClipboardData(text: link));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Invitation link copied to clipboard')),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                        color: AppColors.primary.withValues(alpha: 0.4),
+                        width: 0.5),
+                  ),
+                  child: const Text('Copy Link',
+                      style: TextStyle(
+                          color: AppColors.primary, fontSize: 10)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 

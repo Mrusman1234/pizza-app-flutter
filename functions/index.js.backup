@@ -1,0 +1,346 @@
+const functions = require('firebase-functions');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { onDocumentUpdated, onDocumentCreated } = require('firebase-functions/v2/firestore');
+const admin = require('firebase-admin');
+const env = require('./config/env');
+const stripe = require('stripe')(env.STRIPE_SECRET || 'placeholder_key');
+admin.initializeApp();
+
+/**
+ * Simple Firestore-based rate limiter (Transaction Safe)
+ */
+async function isRateLimited(userId, action, limit = 3, windowMin = 5) {
+    const db = admin.firestore();
+    const rateLimitRef = db.collection('rate_limits').doc(`${userId}_${action}`);
+
+    return db.runTransaction(async (transaction) => {
+        const snap = await transaction.get(rateLimitRef);
+        const now = admin.firestore.Timestamp.now().toMillis();
+        const windowMs = windowMin * 60 * 1000;
+
+        if (!snap.exists) {
+            transaction.set(rateLimitRef, { count: 1, lastReset: now });
+            return false;
+        }
+
+        const data = snap.data();
+        if (now - data.lastReset > windowMs) {
+            transaction.set(rateLimitRef, { count: 1, lastReset: now });
+            return false;
+        }
+
+        if (data.count >= limit) return true;
+
+        transaction.update(rateLimitRef, { count: data.count + 1 });
+        return false;
+    });
+}
+
+/**
+ * 1. Create Stripe Payment Intent
+ * Called by Flutter app to get the client_secret for Stripe.
+ */
+exports.createStripePayment = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Login required');
+    }
+
+    const { amount, requestId } = data;
+
+    try {
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount: Math.round(amount * 100), // rupees/dollars → paisa/cents
+            currency: 'usd',
+            metadata: {
+                userId: context.auth.uid,
+                requestId: requestId // Essential for webhook correlation
+            }
+        });
+
+        return {
+            clientSecret: paymentIntent.client_secret
+        };
+    } catch (error) {
+        console.error('Stripe Error:', error);
+        throw new functions.https.HttpsError('internal', error.message);
+    }
+});
+
+/**
+ * 1.5. Create JazzCash Payment Request
+ * Returns a redirect URL for the JazzCash payment gateway.
+ */
+exports.createJazzCashPayment = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Login required');
+    }
+
+    const { amount, requestId } = data;
+
+    try {
+        // In a real production scenario, you would generate a secure hash (HMAC) here
+        // using your Merchant ID, Password, and Integrity Salt from JazzCash.
+        // For now, we follow the requested redirect logic.
+
+        const merchantId = env.JAZZCASH_MERCHANT_ID || 'merchant_id';
+        const redirectUrl = `https://payments.jazzcash.com.pk/pay?amount=${amount}&orderId=${requestId}&merchantId=${merchantId}`;
+
+        return {
+            redirectUrl: redirectUrl
+        };
+    } catch (error) {
+        console.error('JazzCash Error:', error);
+        throw new functions.https.HttpsError('internal', error.message);
+    }
+});
+
+/**
+ * 2. Stripe Webhook
+ * Handles payment success and finalizes the order.
+ */
+exports.stripeWebhook = functions.https.onRequest(async (req, res) => {
+    const sig = req.headers['stripe-signature'];
+    const endpointSecret = env.STRIPE_WEBHOOK_SECRET || '';
+
+    let event;
+
+    try {
+        event = stripe.webhooks.constructEvent(req.rawBody, sig, endpointSecret);
+    } catch (err) {
+        console.error('Webhook signature verification failed:', err.message);
+        return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    if (event.type === 'payment_intent.succeeded') {
+        const paymentIntent = event.data.object;
+        const { requestId, userId } = paymentIntent.metadata;
+
+        const db = admin.firestore();
+
+        // 1. Record the payment (Audit Log)
+        await db.collection('payments').add({
+            userId,
+            requestId,
+            amount: paymentIntent.amount / 100,
+            status: 'paid',
+            method: 'stripe',
+            paymentId: paymentIntent.id,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        // 2. Finalize Order
+        const requestSnap = await db.collection('order_requests').doc(requestId).get();
+
+        if (requestSnap.exists) {
+            const data = requestSnap.data();
+
+            // Finalize Order as PAID
+            const orderData = {
+                ...data,
+                status: 'Paid',
+                paymentId: paymentIntent.id,
+                paymentMethod: 'Stripe',
+                isVerified: true,
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            };
+
+            await db.collection('orders').doc(requestId).set(orderData);
+            await requestSnap.ref.delete();
+            console.log(`Order ${requestId} finalized via Webhook (Paid).`);
+        }
+    }
+
+    res.json({ received: true });
+});
+
+/**
+ * 2.5. JazzCash Webhook / Callback
+ * Verifies JazzCash payment and finalizes the order.
+ */
+exports.verifyJazzCashPayment = functions.https.onRequest(async (req, res) => {
+    // JazzCash usually sends data via POST. In production, you MUST verify the Secure Hash here.
+    const { pp_ResponseCode, pp_ResponseMsg, pp_TxnRefNo, pp_MerchantID, pp_BillReference } = req.body;
+
+    // ResponseCode '000' usually means success in JazzCash
+    if (pp_ResponseCode !== '000') {
+        console.warn('JazzCash Payment Failed:', pp_ResponseMsg);
+        return res.status(400).send('Payment Failed');
+    }
+
+    const requestId = pp_BillReference; // Using BillReference for correlation
+    const db = admin.firestore();
+
+    // 1. Record the payment (Audit Log)
+    await db.collection('payments').add({
+        transactionId: pp_TxnRefNo,
+        requestId: requestId,
+        status: 'paid',
+        method: 'jazzcash',
+        merchantId: pp_MerchantID,
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // 2. Finalize Order
+    const requestSnap = await db.collection('order_requests').doc(requestId).get();
+
+    if (requestSnap.exists) {
+        const data = requestSnap.data();
+
+        const orderData = {
+            ...data,
+            status: 'Paid',
+            paymentId: pp_TxnRefNo,
+            paymentMethod: 'JazzCash',
+            isVerified: true,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        await db.collection('orders').doc(requestId).set(orderData);
+        await requestSnap.ref.delete();
+        console.log(`Order ${requestId} finalized via JazzCash Callback (Paid).`);
+    }
+
+    res.status(200).send('OK');
+});
+
+/**
+ * 3. Automated Order Expiry
+ */
+exports.cancelStaleOrders = onSchedule('every 5 minutes', async (event) => {
+    const now = admin.firestore.Timestamp.now();
+    const cutoff = admin.firestore.Timestamp.fromMillis(
+        now.toMillis() - 20 * 60 * 1000
+    );
+
+    const staleOrders = await admin.firestore().collection('orders')
+        .where('status', '==', 'Pending')
+        .where('createdAt', '<', cutoff)
+        .get();
+
+    if (staleOrders.empty) return null;
+
+    const batch = admin.firestore().batch();
+    staleOrders.forEach(doc => {
+        batch.update(doc.ref, {
+            status: 'Cancelled',
+            cancelReason: 'Auto-cancelled (timeout)'
+        });
+    });
+
+    return batch.commit();
+});
+
+/**
+ * 4. Push Notification Triggers
+ */
+exports.onOrderStatusUpdate = onDocumentUpdated('orders/{orderId}', async (event) => {
+    const newData = event.data.after.data();
+    const oldData = event.data.before.data();
+
+    if (newData.status === oldData.status) return null;
+
+    const userSnap = await admin.firestore()
+        .collection('users')
+        .doc(newData.userId)
+        .get();
+
+    if (!userSnap.exists) return null;
+
+    const fcmToken = userSnap.data().fcmToken;
+    if (!fcmToken) return null;
+
+    const message = {
+        notification: {
+            title: 'Order Update',
+            body: `Your order is now: ${newData.status}`,
+        },
+        data: {
+            orderId: event.params.orderId,
+            type: 'order_status'
+        },
+        token: fcmToken
+    };
+
+    return admin.messaging().send(message);
+});
+
+/**
+ * 5. Order Finalization (COD / Manual fallback)
+ */
+exports.finalizeOrder = onDocumentCreated('order_requests/{requestId}', async (event) => {
+    const data = event.data.data();
+
+    // If it's a Stripe order, don't finalize here (wait for Webhook)
+    if (data.paymentMethod === 'Stripe') {
+        return null;
+    }
+
+    const requestId = event.params.requestId;
+    const db = admin.firestore();
+
+    const limited = await isRateLimited(data.userId, 'create_order', 3, 5);
+    if (limited) {
+        return event.data.ref.delete();
+    }
+
+    let subtotal = 0;
+    for (const item of data.items) {
+        const productSnap = await db.doc(`restaurants/${data.restaurantId}/menu/${item.pizzaId}`).get();
+        if (!productSnap.exists) continue;
+        const price = productSnap.data().price || 0;
+        subtotal += price * item.quantity;
+    }
+
+    const configSnap = await db.doc('app_config/settings').get();
+    const config = configSnap.data() || {};
+    const baseDeliveryFee = config.baseDeliveryFee ?? 50.0;
+    const taxRate = config.taxRate ?? 0.05;
+
+    const tax = subtotal * taxRate;
+    const totalAmount = subtotal + tax + baseDeliveryFee;
+
+    const orderData = {
+        ...data,
+        subtotal,
+        totalAmount,
+        tax,
+        deliveryFee: baseDeliveryFee,
+        status: 'Pending',
+        isVerified: true,
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    await db.collection('orders').doc(requestId).set(orderData);
+    return event.data.ref.delete();
+});
+
+/**
+ * 6. Update Restaurant Average Rating
+ * Automatically recalculates the 'rating' field whenever totalRatingSum or totalRatingCount changes.
+ */
+exports.updateRestaurantRating = onDocumentUpdated('restaurants/{restaurantId}', async (event) => {
+    const newData = event.data.after.data();
+    const oldData = event.data.before.data();
+
+    // Only run if sum or count has changed
+    if (newData.totalRatingSum === oldData.totalRatingSum &&
+        newData.totalRatingCount === oldData.totalRatingCount) {
+        return null;
+    }
+
+    if (!newData.totalRatingCount || newData.totalRatingCount === 0) return null;
+
+    const average = newData.totalRatingSum / newData.totalRatingCount;
+
+    // Round to 1 decimal place (e.g., 4.5)
+    const roundedAverage = Math.round(average * 10) / 10;
+    const ratingString = roundedAverage.toString();
+
+    // Avoid infinite loop: only update if the value actually changed
+    if (newData.rating === ratingString) return null;
+
+    console.log(`Updating Restaurant ${event.params.restaurantId} rating to ${ratingString}`);
+    return event.data.after.ref.update({
+        rating: ratingString
+    });
+});

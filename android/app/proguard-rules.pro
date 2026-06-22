@@ -1,0 +1,5 @@
+-dontwarn androidx.work.**
+-dontwarn androidx.window.**
+-dontwarn androidx.window.extensions.**
+-dontwarn androidx.window.sidecar.**
+-dontwarn androidx.concurrent.futures.**

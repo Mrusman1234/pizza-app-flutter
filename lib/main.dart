@@ -1,15 +1,20 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:firebase_performance/firebase_performance.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 import 'l10n/app_localizations.dart';
 
+import 'package:flutter_stripe/flutter_stripe.dart';
+
 import 'firebase_options.dart';
-import 'core/theme/light_theme.dart';
 import 'core/theme/dark_theme.dart';
+import 'core/theme/light_theme.dart';
 import 'providers/auth_provider.dart';
 import 'providers/cart_provider.dart';
 import 'providers/restaurant_provider.dart';
@@ -25,10 +30,12 @@ import 'providers/restaurant_admin_provider.dart';
 import 'providers/wallet_provider.dart';
 import 'routes/app_routes.dart';
 import 'routes/route_names.dart';
-import 'core/constants/app_strings.dart';
 
 import 'services/auth_service.dart';
 import 'services/notification_service.dart';
+import 'services/restaurant_admin_service.dart';
+import 'package:app_multi_restaurant/providers/config_provider.dart';
+import 'screens/maintenance_screen.dart';
 
 /// Global key — allows navigation from anywhere (e.g. NotificationService)
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -38,6 +45,39 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // ── Crashlytics & Performance ─────────────────────────────────────────────
+  if (!kIsWeb) {
+    // Pass all uncaught "fatal" errors from the framework to Crashlytics
+    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+
+    // Pass all uncaught asynchronous errors that aren't handled by the Flutter framework to Crashlytics
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
+
+    // Enable Performance Monitoring
+    await FirebasePerformance.instance.setPerformanceCollectionEnabled(true);
+  }
+
+  // ✅ Stability fix for Firestore Web: Ensure persistence and handle transport errors
+  if (kIsWeb) {
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: true,
+      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+    );
+  }
+
+  if (!kIsWeb) {
+    try {
+      Stripe.publishableKey = dotenv.env['STRIPE_PUBLISHABLE_KEY'] ?? "";
+      await Stripe.instance.applySettings();
+      debugPrint('✅ Stripe initialized successfully');
+    } catch (e) {
+      debugPrint('❌ Stripe initialization failed: $e');
+    }
+  }
   debugPrint('Background message received: ${message.messageId}');
   debugPrint('Title: ${message.notification?.title}');
   debugPrint('Body: ${message.notification?.body}');
@@ -50,6 +90,39 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // ── Crashlytics & Performance ─────────────────────────────────────────────
+  if (!kIsWeb) {
+    // Pass all uncaught "fatal" errors from the framework to Crashlytics
+    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+
+    // Pass all uncaught asynchronous errors that aren't handled by the Flutter framework to Crashlytics
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
+
+    // Enable Performance Monitoring
+    await FirebasePerformance.instance.setPerformanceCollectionEnabled(true);
+  }
+
+  // ✅ Stability fix for Firestore Web: Ensure persistence and handle transport errors
+  if (kIsWeb) {
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: true,
+      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+    );
+  }
+
+  if (!kIsWeb) {
+    try {
+      Stripe.publishableKey = dotenv.env['STRIPE_PUBLISHABLE_KEY'] ?? "";
+      await Stripe.instance.applySettings();
+      debugPrint('✅ Stripe initialized successfully');
+    } catch (e) {
+      debugPrint('❌ Stripe initialization failed: $e');
+    }
+  }
 
   // ── Firebase App Check ────────────────────────────────────────────────────
   // On Android/iOS, use the debug provider while in development.
@@ -96,9 +169,14 @@ void main() async {
   runApp(
     MultiProvider(
       providers: [
+        Provider(create: (_) => RestaurantAdminService()),
+        ChangeNotifierProvider(create: (_) => ConfigProvider()),
         ChangeNotifierProvider(create: (_) => AuthService()),
         ChangeNotifierProvider(create: (_) => AppAuthProvider()),
-        ChangeNotifierProvider(create: (_) => CartProvider()),
+        ChangeNotifierProxyProvider<ConfigProvider, CartProvider>(
+          create: (_) => CartProvider(),
+          update: (_, config, cart) => cart!..updateConfig(config),
+        ),
         ChangeNotifierProvider(create: (_) => RestaurantProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => ConnectionProvider()),
@@ -108,7 +186,11 @@ void main() async {
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
         ChangeNotifierProvider(create: (_) => CommissionProvider()),
         ChangeNotifierProvider(create: (_) => PizzaProvider()),
-        ChangeNotifierProvider(create: (_) => RestaurantAdminProvider()),
+        ChangeNotifierProvider(
+          create: (context) => RestaurantAdminProvider(
+            context.read<RestaurantAdminService>(),
+          ),
+        ),
         ChangeNotifierProvider(create: (_) => WalletProvider()),
       ],
       child: const MyApp(),
@@ -122,11 +204,12 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
+    final configProvider = Provider.of<ConfigProvider>(context);
 
     return MaterialApp(
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
-      title: AppStrings.appName,
+      title: configProvider.appName,
       themeMode: themeProvider.isDark ? ThemeMode.dark : ThemeMode.light,
       theme: lightTheme,
       darkTheme: darkTheme,
@@ -136,6 +219,13 @@ class MyApp extends StatelessWidget {
       initialRoute: RouteNames.splash,
       routes: AppRoutes.routes,
       builder: (context, child) {
+        final config = Provider.of<ConfigProvider>(context);
+        final auth = Provider.of<AppAuthProvider>(context);
+
+        if (config.maintenanceMode && auth.user?.role != 'admin') {
+          return const MaintenanceScreen();
+        }
+
         return child!;
       },
     );

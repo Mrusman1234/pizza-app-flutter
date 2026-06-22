@@ -4,26 +4,18 @@ import '../core/constants/firestore_constants.dart';
 import '../models/cart_model.dart';
 import '../models/pizza_model.dart';
 import '../services/firestore_service.dart';
+import 'config_provider.dart';
 
 class CartProvider with ChangeNotifier {
   final List<CartItemModel> _items = [];
   FirestoreService? _firestoreService;
+  ConfigProvider? _configProvider;
   
-  double _baseDeliveryFee = 50.0;
-  double _taxRate = 0.05;
-
   FirestoreService get firestoreService => _firestoreService ??= FirestoreService();
 
-  CartProvider() {
-    _listenToConfig();
-  }
-
-  void _listenToConfig() {
-    firestoreService.getAppConfig().listen((data) {
-      _baseDeliveryFee = (data['baseDeliveryFee'] as num? ?? 50.0).toDouble();
-      _taxRate = (data['taxRate'] as num? ?? 0.05).toDouble();
-      notifyListeners();
-    });
+  void updateConfig(ConfigProvider provider) {
+    _configProvider = provider;
+    notifyListeners();
   }
 
   Map<String, dynamic>? _appliedPromo;
@@ -32,6 +24,9 @@ class CartProvider with ChangeNotifier {
   List<CartItemModel> get items => [..._items];
   Map<String, dynamic>? get appliedPromo => _appliedPromo;
   double get discountAmount => _discountAmount;
+
+  double get _baseDeliveryFee => _configProvider?.baseDeliveryFee ?? 50.0;
+  double get _taxRate => _configProvider?.taxRate ?? 0.05;
 
   /// Returns the restaurant ID if all items belong to the same restaurant.
   /// Returns null if the cart contains items from multiple restaurants or is empty.
@@ -66,6 +61,8 @@ class CartProvider with ChangeNotifier {
       restaurantId: e.key,
       restaurantName: nameMap[e.key]!,
       items: e.value,
+      baseDeliveryFee: _baseDeliveryFee,
+      taxRate: _taxRate,
     )).toList();
   }
 
@@ -217,9 +214,10 @@ class CartProvider with ChangeNotifier {
   }
 
   Future<void> syncCartToFirestore(String userId) async {
+    if (userId.isEmpty) return;
     try {
       await FirebaseFirestore.instance
-          .collection('carts')
+          .collection(FirestoreConstants.cart)
           .doc(userId)
           .set({
         'items': _items.map((e) => e.toMap()).toList(),
@@ -231,9 +229,10 @@ class CartProvider with ChangeNotifier {
   }
 
   Future<void> loadCartFromFirestore(String userId) async {
+    if (userId.isEmpty) return;
     try {
       final doc = await FirebaseFirestore.instance
-          .collection('carts')
+          .collection(FirestoreConstants.cart)
           .doc(userId)
           .get();
 
@@ -258,7 +257,7 @@ class CartProvider with ChangeNotifier {
   Future<void> clearCartFromFirestore(String userId) async {
     try {
       await FirebaseFirestore.instance
-          .collection('carts')
+          .collection(FirestoreConstants.cart)
           .doc(userId)
           .delete();
       _items.clear();

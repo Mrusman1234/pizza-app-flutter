@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../routes/route_names.dart';
-import '../../core/constants/app_colors.dart';
-import '../../core/constants/app_config.dart';
+import 'package:provider/provider.dart';
+import '../routes/route_names.dart';
+import '../core/constants/app_colors.dart';
+import 'package:app_multi_restaurant/providers/config_provider.dart';
 
 class HelpCenterScreen extends StatelessWidget {
   const HelpCenterScreen({super.key});
@@ -328,6 +329,8 @@ class HelpCenterScreen extends StatelessWidget {
   Widget _buildContactCard(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primary = AppColors.primary;
+    final config = Provider.of<ConfigProvider>(context);
+
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -369,7 +372,7 @@ class HelpCenterScreen extends StatelessWidget {
             width: double.infinity,
             child: ElevatedButton.icon(
               onPressed: () async {
-                final Uri whatsappUri = Uri.parse("https://wa.me/${AppConfig.supportWhatsAppNumber.replaceAll('+', '')}");
+                final Uri whatsappUri = Uri.parse("https://wa.me/${config.supportWhatsApp.replaceAll(RegExp(r'[^0-9]'), '')}");
                 if (await canLaunchUrl(whatsappUri)) {
                   await launchUrl(whatsappUri, mode: LaunchMode.externalApplication);
                 } else {
@@ -398,7 +401,7 @@ class HelpCenterScreen extends StatelessWidget {
             width: double.infinity,
             child: OutlinedButton.icon(
               onPressed: () async {
-                final Uri phoneUri = Uri.parse("tel:${AppConfig.supportPhoneNumber}");
+                final Uri phoneUri = Uri.parse("tel:${config.supportPhone}");
                 if (await canLaunchUrl(phoneUri)) {
                   await launchUrl(phoneUri);
                 } else {
